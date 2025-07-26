@@ -1,0 +1,8 @@
+conda create -n downloadvid python=3.10
+conda activate downloadvid
+pip install -r requirements.txt
+python app.py
+
+
+
+pyinstaller --onefile --windowed --name "HT-DownloadVID-Fixed" --add-binary "ffmpeg_temp/ffmpeg.exe;." --add-data "App.py;." run.py
