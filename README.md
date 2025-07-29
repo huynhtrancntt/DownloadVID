@@ -12,14 +12,28 @@
 - 🔄 Đổi tên file tự động để tránh lỗi
 - ⏹️ Có thể dừng quá trình tải bất cứ lúc nào
 
-## Cài đặt
+## Cài đặt và chạy (Windows)
 
-### Yêu cầu hệ thống
+### Cách 1: Sử dụng file Batch (Khuyến nghị)
+
+1. **Lần đầu chạy** - Double-click vào `run_app.bat`:
+   - Tự động kiểm tra Python
+   - Tạo môi trường ảo (virtual environment)
+   - Cài đặt dependencies
+   - Chạy ứng dụng
+
+2. **Các lần sau** - Double-click vào `start.bat` để chạy nhanh
+
+3. **Chỉ cài đặt** - Chạy `install.bat` nếu chỉ muốn cài đặt dependencies
+
+### Cách 2: Thủ công
+
+#### Yêu cầu hệ thống
 - Python 3.8+
 - Windows 10/11 (đã test)
 - ffmpeg (tự động tích hợp)
 
-### Cách cài đặt
+#### Các bước cài đặt
 
 1. Clone repository này:
 ```bash
@@ -27,14 +41,41 @@ git clone <repository-url>
 cd DownloadVID
 ```
 
-2. Cài đặt dependencies:
+2. Tạo môi trường ảo:
+```bash
+python -m venv venv
+```
+
+3. Kích hoạt môi trường ảo:
+```bash
+# Windows
+venv\Scripts\activate
+
+# Linux/Mac
+source venv/bin/activate
+```
+
+4. Cài đặt dependencies:
 ```bash
 pip install -r requirements.txt
 ```
 
-3. Chạy ứng dụng:
+5. Chạy ứng dụng:
 ```bash
 python App.py
+```
+
+## Cấu trúc files
+
+```
+DownloadVID/
+├── App.py              # File chính của ứng dụng
+├── requirements.txt    # Dependencies
+├── README.md          # Hướng dẫn sử dụng
+├── run_app.bat        # Batch file chạy đầy đủ (lần đầu)
+├── start.bat          # Batch file chạy nhanh
+├── install.bat        # Batch file chỉ cài đặt
+└── venv/              # Môi trường ảo (tự động tạo)
 ```
 
 ## Hướng dẫn sử dụng
@@ -65,7 +106,7 @@ python App.py
 - **Tải ảnh thumbnail**: Tải ảnh đại diện của video
 - **Chỉ tải phụ đề**: Chỉ tải phụ đề, bỏ qua video/âm thanh
 
-## Cấu trúc thư mục
+## Cấu trúc thư mục output
 
 ```
 Video/
@@ -93,6 +134,13 @@ Nếu gặp lỗi, hãy kiểm tra:
 2. URL có hợp lệ không
 3. Video có bị hạn chế không
 4. Đủ dung lượng ổ cứng không
+5. Python đã được cài đặt đúng cách
+
+### Lỗi thường gặp
+
+- **"Python chưa được cài đặt"**: Tải Python từ https://python.org
+- **"Môi trường ảo chưa được tạo"**: Chạy `run_app.bat` hoặc `install.bat`
+- **"Không tìm thấy yt-dlp"**: Dependencies chưa được cài đặt
 
 ## Đóng góp
 
