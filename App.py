@@ -207,16 +207,26 @@ class DownloadWorker(QThread):
 
     def _add_subtitle_options(self, cmd):
         """Thêm tùy chọn phụ đề vào lệnh"""
-        lang_string = ",".join(self.sub_lang) if isinstance(self.sub_lang, list) else self.sub_lang
+        # Xử lý danh sách ngôn ngữ
+        if isinstance(self.sub_lang, list):
+            lang_string = ",".join(self.sub_lang)
+            lang_display = ", ".join(self.sub_lang)
+        else:
+            lang_string = self.sub_lang
+            lang_display = self.sub_lang
         
         if self.sub_mode == "📄 Phụ đề chính thức":
             cmd += ["--write-subs", "--sub-langs", lang_string]
-            self.message.emit(f"🔤 Tải phụ đề chính thức ngôn ngữ: {lang_string}")
+            self.message.emit(f"🔤 Tải phụ đề chính thức cho {len(self.sub_lang) if isinstance(self.sub_lang, list) else 1} ngôn ngữ: {lang_display}")
         elif self.sub_mode == "🤖 Phụ đề tự động":
             cmd += ["--write-auto-subs", "--sub-langs", lang_string]
-            self.message.emit(f"🤖 Tải phụ đề tự động ngôn ngữ: {lang_string}")
+            self.message.emit(f"🤖 Tải phụ đề tự động cho {len(self.sub_lang) if isinstance(self.sub_lang, list) else 1} ngôn ngữ: {lang_display}")
         
+        # Thêm tùy chọn để tải tất cả phụ đề có sẵn nếu ngôn ngữ yêu cầu không có
         cmd += ["--ignore-errors", "--no-warnings"]
+        
+        # Debug: In ra lệnh phụ đề
+        self.message.emit(f"🔧 Debug: Lệnh phụ đề = --sub-langs {lang_string}")
 
     def _update_progress_from_line(self, line):
         """Cập nhật progress từ output line"""
@@ -232,41 +242,92 @@ class DownloadWorker(QThread):
     def _post_process_files(self, download_folder):
         """Xử lý files sau khi download"""
         if self.sub_mode != "❌ Không tải":
+            # Đảm bảo sub_lang luôn là list
             lang_list = self.sub_lang if isinstance(self.sub_lang, list) else [self.sub_lang]
-            for lang in lang_list:
+            
+            self.message.emit(f"🔄 Xử lý phụ đề cho {len(lang_list)} ngôn ngữ: {', '.join(lang_list)}")
+            
+            for i, lang in enumerate(lang_list, 1):
+                self.message.emit(f"📝 [{i}/{len(lang_list)}] Xử lý phụ đề ngôn ngữ: {lang}")
                 self._rename_subtitle_files(download_folder, lang)
         
         self._rename_video_files(download_folder)
+        
+        # Kiểm tra và báo cáo kết quả phụ đề
+        self._check_subtitle_results(download_folder)
+
+    def _check_subtitle_results(self, download_folder):
+        """Kiểm tra và báo cáo kết quả tải phụ đề"""
+        try:
+            subtitle_files = glob.glob(os.path.join(download_folder, "*.srt"))
+            subtitle_files.extend(glob.glob(os.path.join(download_folder, "*.vtt")))
+            subtitle_files.extend(glob.glob(os.path.join(download_folder, "*.ass")))
+            
+            if subtitle_files:
+                self.message.emit(f"✅ Đã tải được {len(subtitle_files)} file phụ đề:")
+                for subtitle_file in subtitle_files:
+                    filename = os.path.basename(subtitle_file)
+                    self.message.emit(f"   📄 {filename}")
+            else:
+                self.message.emit("⚠️ Không tìm thấy file phụ đề nào được tải")
+                
+                # Kiểm tra xem có file phụ đề với tên khác không
+                all_files = os.listdir(download_folder)
+                subtitle_like = [f for f in all_files if any(ext in f.lower() for ext in ['.srt', '.vtt', '.ass', '.sub'])]
+                
+                if subtitle_like:
+                    self.message.emit("🔍 Tìm thấy các file có thể là phụ đề:")
+                    for f in subtitle_like:
+                        self.message.emit(f"   📄 {f}")
+                        
+        except Exception as e:
+            self.message.emit(f"⚠️ Lỗi kiểm tra phụ đề: {e}")
 
     def _rename_subtitle_files(self, folder_path, sub_lang):
         """Đổi tên file phụ đề theo định dạng mong muốn"""
         try:
-            if sub_lang == "en":
-                # Xử lý tiếng Anh
-                for subtitle_file in glob.glob(os.path.join(folder_path, "*.en.srt")):
-                    new_name = subtitle_file.replace(".en.srt", ".srt")
-                    if not os.path.exists(new_name):
-                        os.rename(subtitle_file, new_name)
-                        self.message.emit(f"📝 Đổi tên: {os.path.basename(subtitle_file)} → {os.path.basename(new_name)}")
+            self.message.emit(f"🔧 Đang xử lý phụ đề ngôn ngữ: {sub_lang}")
+            
+            # Tìm tất cả file phụ đề cho ngôn ngữ này
+            patterns = [
+                f"*.{sub_lang}.srt",
+                f"*.{sub_lang}.vtt", 
+                f"*.{sub_lang}.ass"
+            ]
+            
+            found_files = []
+            for pattern in patterns:
+                found_files.extend(glob.glob(os.path.join(folder_path, pattern)))
+            
+            if not found_files:
+                self.message.emit(f"⚠️ Không tìm thấy file phụ đề cho ngôn ngữ: {sub_lang}")
+                return
                 
-                # Sửa lỗi ..srt
-                for subtitle_file in glob.glob(os.path.join(folder_path, "*.srt")):
-                    if "..srt" in subtitle_file:
-                        new_name = subtitle_file.replace("..srt", ".srt")
-                        if not os.path.exists(new_name) and new_name != subtitle_file:
-                            os.rename(subtitle_file, new_name)
-                            self.message.emit(f"📝 Sửa tên: {os.path.basename(subtitle_file)} → {os.path.basename(new_name)}")
-            else:
-                # Các ngôn ngữ khác
-                for subtitle_file in glob.glob(os.path.join(folder_path, f"*.{sub_lang}.srt")):
-                    if f"..{sub_lang}.srt" in subtitle_file:
-                        new_name = subtitle_file.replace(f"..{sub_lang}.srt", f".{sub_lang}.srt")
+            self.message.emit(f"📁 Tìm thấy {len(found_files)} file phụ đề cho {sub_lang}")
+            
+            for subtitle_file in found_files:
+                filename = os.path.basename(subtitle_file)
+                
+                if sub_lang == "en":
+                    # Xử lý đặc biệt cho tiếng Anh - đổi thành .srt chính
+                    if subtitle_file.endswith(".en.srt"):
+                        new_name = subtitle_file.replace(".en.srt", ".srt")
                         if not os.path.exists(new_name):
                             os.rename(subtitle_file, new_name)
-                            self.message.emit(f"📝 Sửa tên: {os.path.basename(subtitle_file)} → {os.path.basename(new_name)}")
-                            
+                            self.message.emit(f"📝 Đổi tên: {filename} → {os.path.basename(new_name)}")
+                        else:
+                            self.message.emit(f"⚠️ File đã tồn tại: {os.path.basename(new_name)}")
+                
+                # Sửa lỗi tên file có .. (double dots)
+                if f"..{sub_lang}." in subtitle_file:
+                    ext = os.path.splitext(subtitle_file)[1]
+                    new_name = subtitle_file.replace(f"..{sub_lang}.", f".{sub_lang}.")
+                    if not os.path.exists(new_name) and new_name != subtitle_file:
+                        os.rename(subtitle_file, new_name)
+                        self.message.emit(f"📝 Sửa tên: {filename} → {os.path.basename(new_name)}")
+                        
         except Exception as e:
-            self.message.emit(f"⚠️ Lỗi đổi tên phụ đề: {e}")
+            self.message.emit(f"⚠️ Lỗi đổi tên phụ đề {sub_lang}: {e}")
 
     def _rename_video_files(self, folder_path):
         """Đổi tên file video (sửa ..mp4, ..mp3, etc. thành .mp4, .mp3)"""
@@ -588,6 +649,53 @@ class DownloaderApp(QWidget):
         
         if not selected_lang_codes:
             selected_lang_codes = ["vi", "en"]
+            self.output_list.addItem("⚠️ Không có ngôn ngữ nào được chọn, sử dụng mặc định: vi, en")
+
+        # Debug: Hiển thị thông tin cấu hình
+        self.output_list.addItem("🔧 === THÔNG TIN CẤU HÌNH ===")
+        self.output_list.addItem(f"🔗 Số URL: {len(urls)}")
+        self.output_list.addItem(f"🎬 Chế độ: {'Video đơn' if self.video_radio.isChecked() else 'Playlist'}")
+        self.output_list.addItem(f"📝 Phụ đề: {self.sub_mode.currentText()}")
+        self.output_list.addItem(f"🌍 Ngôn ngữ phụ đề ({len(selected_lang_codes)}): {', '.join(selected_lang_codes)}")
+        
+        # Hiển thị tên ngôn ngữ đầy đủ
+        lang_names = []
+        lang_map = {
+            "vi": "🇻🇳 Tiếng Việt",
+            "en": "🇺🇸 Tiếng Anh", 
+            "zh-Hans": "🇨🇳 Tiếng Trung (Giản thể)",
+            "zh-Hant": "🇹🇼 Tiếng Trung (Phồn thể)",
+            "ko": "🇰🇷 Tiếng Hàn",
+            "ja": "🇯🇵 Tiếng Nhật",
+            "fr": "🇫🇷 Tiếng Pháp",
+            "es": "🇪🇸 Tiếng Tây Ban Nha"
+        }
+        
+        for code in selected_lang_codes:
+            lang_names.append(lang_map.get(code, f"❓ {code}"))
+        
+        self.output_list.addItem(f"📋 Chi tiết ngôn ngữ: {', '.join(lang_names)}")
+        
+        # Hiển thị các tùy chọn khác
+        options = []
+        if self.audio_only.isChecked():
+            options.append("🎵 Audio MP3")
+        if self.convert_srt.isChecked():
+            options.append("🔁 Convert SRT")
+        if self.include_thumb.isChecked():
+            options.append("🖼️ Thumbnail")
+        if self.subtitle_only.isChecked():
+            options.append("📝 Chỉ phụ đề")
+            
+        if options:
+            self.output_list.addItem(f"⚙️ Tùy chọn: {', '.join(options)}")
+        
+        custom_folder = self.folder_name_input.toPlainText().strip()
+        if custom_folder:
+            self.output_list.addItem(f"📁 Thư mục: {custom_folder}")
+            
+        self.output_list.addItem("🔧 ========================")
+        self.scroll_to_bottom()
 
         self.worker = DownloadWorker(
             urls=urls,
@@ -598,7 +706,7 @@ class DownloaderApp(QWidget):
             convert_srt=self.convert_srt.isChecked(),
             include_thumb=self.include_thumb.isChecked(),
             subtitle_only=self.subtitle_only.isChecked(),
-            custom_folder_name=self.folder_name_input.toPlainText()
+            custom_folder_name=custom_folder
         )
 
         self._connect_worker_signals()
