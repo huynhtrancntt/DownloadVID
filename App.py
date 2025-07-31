@@ -6,7 +6,8 @@ from datetime import datetime
 from PySide6.QtWidgets import (
     QApplication, QWidget, QLabel, QVBoxLayout, QPushButton,
     QTextEdit, QCheckBox, QComboBox, QRadioButton,
-    QHBoxLayout, QButtonGroup, QMessageBox, QProgressBar, QListWidget, QListWidgetItem
+    QHBoxLayout, QButtonGroup, QMessageBox, QProgressBar, QListWidget, QListWidgetItem,
+    QFileDialog
 )
 from PySide6.QtCore import Qt, QThread, Signal
 from PySide6.QtGui import QScreen
@@ -64,7 +65,7 @@ class DownloadWorker(QThread):
         """Chạy quá trình download"""
         try:
             download_folder = self._create_download_folder()
-            
+            download_folder = download_folder.replace('\\', '/')
             for i, url in enumerate(self.urls, 1):
                 if self.stop_flag:
                     self.message.emit("⏹ Đã dừng tải.")
@@ -86,19 +87,38 @@ class DownloadWorker(QThread):
 
     def _create_download_folder(self):
         """Tạo thư mục download"""
-        base_folder = "Video"
-        os.makedirs(base_folder, exist_ok=True)
-
         if self.custom_folder_name:
-            download_folder = os.path.join(base_folder, self.custom_folder_name)
+            # Kiểm tra xem có phải là đường dẫn đầy đủ không
+            if os.path.isabs(self.custom_folder_name):
+                # Đường dẫn đầy đủ - sử dụng trực tiếp
+                download_folder = self.custom_folder_name
+                date_str = datetime.now().strftime("%Y-%m-%d")
+                download_folder = os.path.join(download_folder, date_str)
+
+            else:
+                # Chỉ là tên thư mục - tạo trong thư mục Video
+                base_folder = "Video"
+                os.makedirs(base_folder, exist_ok=True)
+                date_str = datetime.now().strftime("%Y-%m-%d")
+                download_folder = os.path.join(base_folder, self.custom_folder_name)
         else:
+            # Không có tên tùy chọn - tạo theo ngày
+            base_folder = "Video"
+            os.makedirs(base_folder, exist_ok=True)
             date_str = datetime.now().strftime("%Y-%m-%d")
             download_folder = os.path.join(base_folder, date_str)
 
+        # Xử lý trường hợp thư mục đã tồn tại
         original_folder = download_folder
         count = 1
         while os.path.exists(download_folder):
-            download_folder = f"{original_folder}-{count}"
+            if os.path.isabs(self.custom_folder_name):
+                # Với đường dẫn đầy đủ, thêm số vào cuối tên thư mục
+                parent_dir = os.path.dirname(original_folder)
+                folder_name = os.path.basename(original_folder)
+                download_folder = os.path.join(parent_dir, f"{folder_name}-{count}")
+            else:
+                download_folder = f"{original_folder}-{count}"
             count += 1
         
         os.makedirs(download_folder, exist_ok=True)
@@ -302,15 +322,26 @@ class DownloaderApp(QWidget):
         
         self.url_input = QTextEdit()
         self.url_input.setPlaceholderText("Mỗi dòng 1 link video hoặc playlist...")
-        self.url_input.setFixedHeight(100)
+        self.url_input.setFixedHeight(75)
         self.layout.addWidget(self.url_input)
 
         self.layout.addWidget(QLabel("📁 Tên thư mục tải (tuỳ chọn):"))
         
+        # Tạo layout ngang cho ô nhập tên thư mục và nút chọn thư mục
+        folder_layout = QHBoxLayout()
+        
         self.folder_name_input = QTextEdit()
-        self.folder_name_input.setPlaceholderText("Nhập tên thư mục (tuỳ chọn)")
-        self.folder_name_input.setFixedHeight(30)
-        self.layout.addWidget(self.folder_name_input)
+        self.folder_name_input.setPlaceholderText("Nhập tên thư mục hoặc chọn thư mục...")
+        self.folder_name_input.setFixedHeight(45)
+        folder_layout.addWidget(self.folder_name_input)
+        
+        # Nút chọn thư mục
+        self.browse_folder_button = QPushButton("📂 Open")
+        self.browse_folder_button.clicked.connect(self.browse_folder)
+        self.browse_folder_button.setFixedWidth(130)
+        folder_layout.addWidget(self.browse_folder_button)
+        
+        self.layout.addLayout(folder_layout)
 
     def _create_mode_section(self):
         """Tạo phần chọn chế độ tải"""
@@ -363,11 +394,11 @@ class DownloaderApp(QWidget):
         ]
 
         # Tạo layout dạng lưới 2 cột
-        for i in range(0, len(languages), 2):
+        for i in range(0, len(languages), 4):
             row_layout = QHBoxLayout()
             row_layout.setSpacing(5)
             
-            for j in range(2):
+            for j in range(4):
                 if i + j < len(languages):
                     code, name = languages[i + j]
                     checkbox = QCheckBox(name)
@@ -384,18 +415,30 @@ class DownloaderApp(QWidget):
 
     def _create_options_section(self):
         """Tạo phần tùy chọn bổ sung"""
+        # Dòng 1: Chuyển phụ đề sang .srt và Tải âm thanh MP3
+        row1_layout = QHBoxLayout()
+        
         self.convert_srt = QCheckBox("🔁 Chuyển phụ đề sang .srt")
         self.convert_srt.setChecked(True)
-        self.layout.addWidget(self.convert_srt)
-
+        row1_layout.addWidget(self.convert_srt)
+        
         self.audio_only = QCheckBox("🎵 Tải âm thanh MP3")
-        self.layout.addWidget(self.audio_only)
-
-        self.include_thumb = QCheckBox("��️ Tải ảnh thumbnail")
-        self.layout.addWidget(self.include_thumb)
-
+        row1_layout.addWidget(self.audio_only)
+        
+        row1_layout.addStretch()  # Thêm khoảng trống để căn trái
+        self.layout.addLayout(row1_layout)
+        
+        # Dòng 2: Tải ảnh thumbnail và Chỉ tải phụ đề
+        row2_layout = QHBoxLayout()
+        
+        self.include_thumb = QCheckBox("🖼️ Tải ảnh thumbnail")
+        row2_layout.addWidget(self.include_thumb)
+        
         self.subtitle_only = QCheckBox("📝 Chỉ tải phụ đề")
-        self.layout.addWidget(self.subtitle_only)
+        row2_layout.addWidget(self.subtitle_only)
+        
+        row2_layout.addStretch()  # Thêm khoảng trống để căn trái
+        self.layout.addLayout(row2_layout)
 
     def _create_control_buttons(self):
         """Tạo các nút điều khiển"""
@@ -478,7 +521,7 @@ class DownloaderApp(QWidget):
         self.stop_button.setVisible(True)
         self.progress.setVisible(True)
         self.download_button.setEnabled(False)
-        self.output_list.setMinimumHeight(200)
+        # self.output_list.setMinimumHeight(120)
 
     def _connect_worker_signals(self):
         """Kết nối các signal của worker"""
@@ -508,7 +551,7 @@ class DownloaderApp(QWidget):
         self.stop_button.setVisible(False)
         self.progress.setVisible(False)
         self.download_button.setEnabled(True)
-        self.output_list.setMinimumHeight(120)
+        # self.output_list.setMinimumHeight(120)
 
     def scroll_to_bottom(self):
         """Cuộn xuống cuối danh sách"""
@@ -689,6 +732,21 @@ class DownloaderApp(QWidget):
                 border-color: #007bff;
             }
         """)
+
+    def browse_folder(self):
+        """Mở hộp thoại để chọn thư mục download"""
+        current_text = self.folder_name_input.toPlainText().strip()
+        start_dir = current_text if os.path.isdir(current_text) else os.getcwd()
+        
+        folder_path = QFileDialog.getExistingDirectory(
+            self, 
+            "Chọn thư mục download", 
+            start_dir
+        )
+        
+        if folder_path:
+            # Lưu đường dẫn đầy đủ vào input field
+            self.folder_name_input.setText(folder_path)
 
 
 if __name__ == "__main__":
