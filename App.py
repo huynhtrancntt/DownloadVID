@@ -20,14 +20,16 @@ def resource_path(relative_path):
 
 
 # Thiết lập đường dẫn ffmpeg và kiểm tra
-ffmpeg_path = resource_path("ffmpeg.exe")
+ffmpeg_path = resource_path(os.path.join("ffmpeg", "ffmpeg.exe"))
 
 # Gọi thử ffmpeg
 try:
     result = subprocess.run([ffmpeg_path, "-version"], capture_output=True, text=True)
-    print(result.stdout)
+    print("✅ FFmpeg đã sẵn sàng:")
+    print(result.stdout.split('\n')[0])  # Chỉ hiển thị dòng đầu tiên
 except Exception as e:
-    print("Lỗi khi chạy ffmpeg:", e)
+    print("⚠️ Lỗi khi chạy ffmpeg:", e)
+    print("📁 Đang tìm ffmpeg trong thư mục ffmpeg/")
 
 
 class DownloadWorker(QThread):
@@ -131,7 +133,28 @@ class DownloadWorker(QThread):
 
     def _build_command(self, url, download_folder, index):
         """Xây dựng lệnh yt-dlp"""
-        cmd = ["yt-dlp", url, "--progress"]
+        # Tìm yt-dlp executable
+        ytdlp_path = None
+        possible_paths = [
+            "yt-dlp.exe",  # Trong PATH
+            "venv/Scripts/yt-dlp.exe",  # Trong venv
+            os.path.join(sys.prefix, "Scripts", "yt-dlp.exe"),  # Trong Python Scripts
+        ]
+        
+        for path in possible_paths:
+            if os.path.exists(path):
+                ytdlp_path = path
+                break
+        
+        if not ytdlp_path:
+            # Fallback to system yt-dlp
+            ytdlp_path = "yt-dlp"
+        
+        cmd = [ytdlp_path, url, "--progress"]
+        
+        # Thêm đường dẫn ffmpeg nếu tồn tại
+        if os.path.exists(ffmpeg_path):
+            cmd += ["--ffmpeg-location", ffmpeg_path]
         
         if self.subtitle_only:
             cmd.append("--skip-download")
@@ -368,7 +391,7 @@ class DownloaderApp(QWidget):
         self.audio_only = QCheckBox("🎵 Tải âm thanh MP3")
         self.layout.addWidget(self.audio_only)
 
-        self.include_thumb = QCheckBox("🖼️ Tải ảnh thumbnail")
+        self.include_thumb = QCheckBox("��️ Tải ảnh thumbnail")
         self.layout.addWidget(self.include_thumb)
 
         self.subtitle_only = QCheckBox("📝 Chỉ tải phụ đề")

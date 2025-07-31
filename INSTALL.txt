@@ -5,4 +5,4 @@ python app.py
 
 
 
-pyinstaller --onefile --windowed --name "HT-DownloadVID-Fixed" --add-binary "ffmpeg_temp/ffmpeg.exe;." --add-data "App.py;." run.py
+python -m PyInstaller --onefile --name=HT_DownloadVID "--add-binary=ffmpeg\ffmpeg.exe:ffmpeg" "--add-binary=venv\Scripts\yt-dlp.exe:." --hidden-import=subprocess App.py
