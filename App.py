@@ -7,10 +7,10 @@ from PySide6.QtWidgets import (
     QApplication, QWidget, QLabel, QVBoxLayout, QPushButton,
     QTextEdit, QCheckBox, QComboBox, QRadioButton,
     QHBoxLayout, QButtonGroup, QMessageBox, QProgressBar, QListWidget, QListWidgetItem,
-    QFileDialog
+    QFileDialog, QMenuBar, QMenu
 )
-from PySide6.QtCore import Qt, QThread, Signal
-from PySide6.QtGui import QScreen
+from PySide6.QtCore import Qt, QThread, Signal, QSettings
+from PySide6.QtGui import QScreen, QAction
 
 
 def resource_path(relative_path):
@@ -296,8 +296,11 @@ class DownloaderApp(QWidget):
     def __init__(self):
         super().__init__()
         self.worker = None
+        self.settings = QSettings("HT Software", "DownloadVID")
+        self.loading_settings = False  # Flag để tránh auto-save khi đang load
         self.init_ui()
         self.apply_styles()
+        self.load_settings()
 
     def init_ui(self):
         """Khởi tạo giao diện người dùng"""
@@ -305,8 +308,17 @@ class DownloaderApp(QWidget):
         self.setMinimumWidth(520)
         self.center_window()
 
+        # Tạo layout chính
+        main_layout = QVBoxLayout()
+        self.setLayout(main_layout)
+        
+        # Thêm menubar
+        self._create_menubar()
+        main_layout.addWidget(self.menubar)
+        
+        # Tạo layout cho nội dung chính
         self.layout = QVBoxLayout()
-        self.setLayout(self.layout)
+        main_layout.addLayout(self.layout)
 
         self._create_url_section()
         self._create_mode_section()
@@ -315,6 +327,55 @@ class DownloaderApp(QWidget):
         self._create_control_buttons()
         self._create_progress_section()
         self._create_log_section()
+        
+        # Auto-save sẽ được kết nối sau khi load_settings() hoàn thành
+
+    def _create_menubar(self):
+        """Tạo menubar"""
+        self.menubar = QMenuBar(self)
+        
+        # Menu File
+        file_menu = self.menubar.addMenu("📁 File")
+        
+        # Action Reset Settings
+        reset_action = QAction("🔄 Reset Settings", self)
+        reset_action.triggered.connect(self.reset_settings)
+        file_menu.addAction(reset_action)
+        
+        file_menu.addSeparator()
+        
+        # Action Exit
+        exit_action = QAction("❌ Exit", self)
+        exit_action.triggered.connect(self.close)
+        file_menu.addAction(exit_action)
+        
+        # Menu Settings
+        settings_menu = self.menubar.addMenu("⚙️ Settings")
+        
+        # Action Save Current Settings
+        save_settings_action = QAction("💾 Save Current Settings", self)
+        save_settings_action.triggered.connect(self.save_settings)
+        settings_menu.addAction(save_settings_action)
+        
+        # Action Load Default Settings
+        load_default_action = QAction("📋 Load Default Settings", self)
+        load_default_action.triggered.connect(self.load_default_settings)
+        settings_menu.addAction(load_default_action)
+        
+        settings_menu.addSeparator()
+        
+        # Action View Settings Info
+        info_action = QAction("📊 View Settings Info", self)
+        info_action.triggered.connect(self.show_settings_info)
+        settings_menu.addAction(info_action)
+        
+        # Menu Help
+        help_menu = self.menubar.addMenu("❓ Help")
+        
+        # Action About
+        about_action = QAction("ℹ️ About", self)
+        about_action.triggered.connect(self.show_about)
+        help_menu.addAction(about_action)
 
     def _create_url_section(self):
         """Tạo phần nhập URL"""
@@ -468,6 +529,35 @@ class DownloaderApp(QWidget):
         self.output_list.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
         self.output_list.setMinimumHeight(120)
         self.layout.addWidget(self.output_list)
+
+    def _connect_auto_save(self):
+        """Kết nối auto-save với các control"""
+        # Chỉ kết nối sau khi đã load settings xong
+        if not hasattr(self, 'loading_settings') or self.loading_settings:
+            return
+            
+        # URL input
+        self.url_input.textChanged.connect(self.auto_save_on_change)
+        
+        # Folder input
+        self.folder_name_input.textChanged.connect(self.auto_save_on_change)
+        
+        # Radio buttons
+        self.video_radio.toggled.connect(self.auto_save_on_change)
+        self.playlist_radio.toggled.connect(self.auto_save_on_change)
+        
+        # Combobox
+        self.sub_mode.currentTextChanged.connect(self.auto_save_on_change)
+        
+        # Checkboxes
+        self.convert_srt.toggled.connect(self.auto_save_on_change)
+        self.audio_only.toggled.connect(self.auto_save_on_change)
+        self.include_thumb.toggled.connect(self.auto_save_on_change)
+        self.subtitle_only.toggled.connect(self.auto_save_on_change)
+        
+        # Language checkboxes
+        for checkbox in self.lang_checkboxes.values():
+            checkbox.toggled.connect(self.auto_save_on_change)
 
     def center_window(self):
         """Căn giữa cửa sổ trên màn hình"""
@@ -747,6 +837,292 @@ class DownloaderApp(QWidget):
         if folder_path:
             # Lưu đường dẫn đầy đủ vào input field
             self.folder_name_input.setText(folder_path)
+            # Tự động lưu ngay khi chọn thư mục
+            self.auto_save_on_change()
+
+    def save_settings(self):
+        """Lưu settings vào registry (với thông báo)"""
+        try:
+            # Gọi auto_save_on_change để lưu tất cả
+            self.auto_save_on_change()
+            
+            # Lưu thêm thông tin thống kê
+            self.settings.setValue("last_saved", datetime.now().isoformat())
+            
+            usage_count = self.settings.value("usage_count", 0, int)
+            self.settings.setValue("usage_count", usage_count + 1)
+            
+            # Lưu vị trí cửa sổ
+            self.settings.setValue("geometry", self.saveGeometry())
+            
+            # Đồng bộ
+            self.settings.sync()
+            
+            QMessageBox.information(self, "Thành công", "✅ Đã lưu settings thành công!")
+            
+        except Exception as e:
+            QMessageBox.warning(self, "Lỗi", f"❌ Không thể lưu settings: {e}")
+
+    def load_settings(self):
+        """Tải settings từ registry"""
+        self.loading_settings = True  # Tắt auto-save trong khi load
+        
+        try:
+            print("🔄 Đang tải settings...")
+            
+            # Tải URL đã lưu
+            saved_urls = self.settings.value("urls", "")
+            if saved_urls:
+                self.url_input.setText(saved_urls)
+                print(f"📋 Đã tải {len(saved_urls.splitlines())} URL")
+            
+            # Tải tên thư mục tùy chọn
+            custom_folder = self.settings.value("custom_folder", "")
+            if custom_folder:
+                self.folder_name_input.setText(custom_folder)
+                print(f"📁 Đã tải thư mục: {custom_folder}")
+            
+            # Tải chế độ video
+            video_mode = self.settings.value("video_mode", True, bool)
+            if video_mode:
+                self.video_radio.setChecked(True)
+            else:
+                self.playlist_radio.setChecked(True)
+            print(f"🎬 Chế độ video: {'Video đơn' if video_mode else 'Playlist'}")
+            
+            # Tải chế độ phụ đề
+            subtitle_mode = self.settings.value("subtitle_mode", "🤖 Phụ đề tự động")
+            index = self.sub_mode.findText(subtitle_mode)
+            if index >= 0:
+                self.sub_mode.setCurrentIndex(index)
+            print(f"📝 Chế độ phụ đề: {subtitle_mode}")
+            
+            # Tải ngôn ngữ phụ đề
+            selected_langs = self.settings.value("selected_languages", ["vi", "en"])
+            if isinstance(selected_langs, str):
+                selected_langs = [selected_langs]
+            
+            # Reset tất cả checkbox về False trước
+            for checkbox in self.lang_checkboxes.values():
+                checkbox.setChecked(False)
+            
+            # Chọn các ngôn ngữ đã lưu
+            for lang in selected_langs:
+                if lang in self.lang_checkboxes:
+                    self.lang_checkboxes[lang].setChecked(True)
+            print(f"🌍 Đã tải {len(selected_langs)} ngôn ngữ: {selected_langs}")
+            
+            # Tải các tùy chọn
+            self.convert_srt.setChecked(self.settings.value("convert_srt", True, bool))
+            self.audio_only.setChecked(self.settings.value("audio_only", False, bool))
+            self.include_thumb.setChecked(self.settings.value("include_thumb", False, bool))
+            self.subtitle_only.setChecked(self.settings.value("subtitle_only", False, bool))
+            
+            # Tải vị trí và kích thước cửa sổ
+            geometry = self.settings.value("geometry")
+            if geometry:
+                self.restoreGeometry(geometry)
+                print("🪟 Đã khôi phục vị trí cửa sổ")
+                
+            # Hiển thị thông tin thống kê
+            usage_count = self.settings.value("usage_count", 0, int)
+            last_saved = self.settings.value("last_saved", "")
+            
+            if usage_count > 0:
+                print(f"📊 Lần sử dụng thứ: {usage_count}")
+                if last_saved:
+                    print(f"🕒 Lần lưu cuối: {last_saved}")
+                    
+            print("✅ Đã tải settings thành công!")
+                
+        except Exception as e:
+            print(f"⚠️ Không thể tải settings: {e}")
+        finally:
+            self.loading_settings = False  # Bật lại auto-save
+            # Kết nối auto-save sau khi load xong
+            self._connect_auto_save()
+
+    def reset_settings(self):
+        """Reset tất cả settings về mặc định"""
+        reply = QMessageBox.question(
+            self, "Xác nhận", 
+            "🔄 Bạn có chắc muốn reset tất cả settings về mặc định?\n\n⚠️ Điều này sẽ xóa:\n• URL đã lưu\n• Tất cả tùy chọn\n• Thư mục tùy chọn\n• Vị trí cửa sổ",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No
+        )
+        
+        if reply == QMessageBox.StandardButton.Yes:
+            self.settings.clear()
+            self.load_default_settings()
+            QMessageBox.information(self, "Thành công", "✅ Đã reset settings về mặc định!")
+
+    def load_default_settings(self):
+        """Tải settings mặc định"""
+        # Xóa URL
+        self.url_input.clear()
+        
+        # Chế độ video mặc định
+        self.video_radio.setChecked(True)
+        
+        # Chế độ phụ đề mặc định
+        self.sub_mode.setCurrentText("🤖 Phụ đề tự động")
+        
+        # Ngôn ngữ mặc định
+        for code, checkbox in self.lang_checkboxes.items():
+            checkbox.setChecked(code in ["vi", "en"])
+        
+        # Tùy chọn mặc định
+        self.convert_srt.setChecked(True)
+        self.audio_only.setChecked(False)
+        self.include_thumb.setChecked(False)
+        self.subtitle_only.setChecked(False)
+        
+        # Xóa tên thư mục tùy chọn
+        self.folder_name_input.clear()
+
+    def auto_save_on_change(self):
+        """Tự động lưu khi có thay đổi (không hiển thị thông báo)"""
+        # Không lưu nếu đang trong quá trình load settings
+        if hasattr(self, 'loading_settings') and self.loading_settings:
+            return
+            
+        try:
+            # Lưu URL đã nhập
+            urls_text = self.url_input.toPlainText().strip()
+            self.settings.setValue("urls", urls_text)
+            
+            # Lưu chế độ video
+            self.settings.setValue("video_mode", self.video_radio.isChecked())
+            
+            # Lưu chế độ phụ đề
+            self.settings.setValue("subtitle_mode", self.sub_mode.currentText())
+            
+            # Lưu ngôn ngữ phụ đề đã chọn
+            selected_langs = []
+            for code, checkbox in self.lang_checkboxes.items():
+                if checkbox.isChecked():
+                    selected_langs.append(code)
+            self.settings.setValue("selected_languages", selected_langs)
+            
+            # Lưu các tùy chọn
+            self.settings.setValue("convert_srt", self.convert_srt.isChecked())
+            self.settings.setValue("audio_only", self.audio_only.isChecked())
+            self.settings.setValue("include_thumb", self.include_thumb.isChecked())
+            self.settings.setValue("subtitle_only", self.subtitle_only.isChecked())
+            
+            # Lưu tên thư mục tùy chọn
+            custom_folder = self.folder_name_input.toPlainText().strip()
+            self.settings.setValue("custom_folder", custom_folder)
+            
+            # Đồng bộ settings ngay lập tức
+            self.settings.sync()
+            
+            # Debug log (chỉ khi có thay đổi quan trọng)
+            if custom_folder:
+                print(f"💾 Auto-save: Thư mục = {custom_folder}")
+            
+        except Exception as e:
+            print(f"⚠️ Lỗi auto-save: {e}")
+
+    def debug_settings(self):
+        """Debug method để kiểm tra settings đã lưu"""
+        print("\n🔍 DEBUG SETTINGS:")
+        print(f"📁 Custom folder trong registry: '{self.settings.value('custom_folder', 'EMPTY')}'")
+        print(f"📁 Custom folder trong UI: '{self.folder_name_input.toPlainText()}'")
+        print(f"🔗 URLs trong registry: {len(self.settings.value('urls', '').splitlines())} dòng")
+        print(f"🔗 URLs trong UI: {len(self.url_input.toPlainText().splitlines())} dòng")
+        print(f"🎬 Video mode: {self.settings.value('video_mode', 'NONE')}")
+        print(f"📝 Subtitle mode: {self.settings.value('subtitle_mode', 'NONE')}")
+        print(f"🌍 Languages: {self.settings.value('selected_languages', 'NONE')}")
+        print("=" * 60)
+
+    def show_about(self):
+        """Hiển thị thông tin về ứng dụng"""
+        about_text = """
+        <h3>🎬 HT DownloadVID v1.0</h3>
+        <p><b>Ứng dụng download video và phụ đề</b></p>
+        <p>📅 Phiên bản: 1.0</p>
+        <p>👨‍💻 Phát triển bởi: HT Software</p>
+        <p>🔧 Sử dụng: yt-dlp + ffmpeg</p>
+        <br>
+        <p><b>Tính năng:</b></p>
+        <ul>
+        <li>✅ Download video từ nhiều nền tảng</li>
+        <li>✅ Hỗ trợ playlist</li>
+        <li>✅ Download phụ đề đa ngôn ngữ</li>
+        <li>✅ Chuyển đổi audio sang MP3</li>
+        <li>✅ Lưu settings tự động</li>
+        </ul>
+        """
+        
+        QMessageBox.about(self, "Về ứng dụng", about_text)
+
+    def show_settings_info(self):
+        """Hiển thị thông tin về settings đã lưu"""
+        try:
+            usage_count = self.settings.value("usage_count", 0, int)
+            last_saved = self.settings.value("last_saved", "Chưa lưu")
+            
+            # Đếm số URL đã lưu
+            saved_urls = self.settings.value("urls", "")
+            url_count = len([url for url in saved_urls.splitlines() if url.strip()]) if saved_urls else 0
+            
+            # Đếm ngôn ngữ đã chọn
+            selected_langs = self.settings.value("selected_languages", [])
+            if isinstance(selected_langs, str):
+                selected_langs = [selected_langs]
+            lang_count = len(selected_langs) if selected_langs else 0
+            
+            # Kiểm tra thư mục tùy chọn - Hiển thị chi tiết hơn
+            custom_folder = self.settings.value("custom_folder", "")
+            folder_display = custom_folder if custom_folder else "Không có"
+            
+            info_text = f"""
+            <h3>📊 Thông tin Settings</h3>
+            <table border="1" cellpadding="5" cellspacing="0">
+            <tr><td><b>🔢 Số lần sử dụng:</b></td><td>{usage_count}</td></tr>
+            <tr><td><b>🕒 Lần lưu cuối:</b></td><td>{last_saved}</td></tr>
+            <tr><td><b>🔗 Số URL đã lưu:</b></td><td>{url_count}</td></tr>
+            <tr><td><b>🌍 Ngôn ngữ đã chọn:</b></td><td>{lang_count}</td></tr>
+            <tr><td><b>📁 Thư mục tùy chọn:</b></td><td>{folder_display}</td></tr>
+            <tr><td><b>🎬 Chế độ video:</b></td><td>{"Video đơn" if self.video_radio.isChecked() else "Playlist"}</td></tr>
+            <tr><td><b>📝 Chế độ phụ đề:</b></td><td>{self.sub_mode.currentText()}</td></tr>
+            </table>
+            <br>
+            <p><b>🔧 Tùy chọn hiện tại:</b></p>
+            <ul>
+            <li>🔁 Convert SRT: {"✅" if self.convert_srt.isChecked() else "❌"}</li>
+            <li>🎵 Audio Only: {"✅" if self.audio_only.isChecked() else "❌"}</li>
+            <li>🖼️ Include Thumbnail: {"✅" if self.include_thumb.isChecked() else "❌"}</li>
+            <li>📝 Subtitle Only: {"✅" if self.subtitle_only.isChecked() else "❌"}</li>
+            </ul>
+            """
+            
+            QMessageBox.information(self, "Settings Info", info_text)
+            
+            # Debug trong console
+            self.debug_settings()
+            
+        except Exception as e:
+            QMessageBox.warning(self, "Lỗi", f"❌ Không thể hiển thị thông tin settings: {e}")
+
+    def closeEvent(self, event):
+        """Xử lý khi đóng ứng dụng - tự động lưu settings"""
+        try:
+            # Lưu settings không hiển thị thông báo
+            self.auto_save_on_change()
+            
+            # Lưu vị trí cửa sổ cuối cùng
+            self.settings.setValue("geometry", self.saveGeometry())
+            
+            # Cập nhật thời gian đóng ứng dụng
+            from datetime import datetime
+            self.settings.setValue("last_closed", datetime.now().isoformat())
+            
+        except Exception as e:
+            print(f"⚠️ Lỗi khi lưu settings: {e}")
+        
+        event.accept()
 
 
 if __name__ == "__main__":
