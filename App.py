@@ -255,9 +255,6 @@ class DownloadWorker(QThread):
             
             self.message.emit(f"🔄 Xử lý phụ đề cho {len(lang_list)} ngôn ngữ: {', '.join(lang_list)}")
             
-            # Trước tiên, kiểm tra tất cả file phụ đề có sẵn
-            self._scan_all_subtitles(download_folder)
-            
             # Sau đó xử lý từng ngôn ngữ
             for i, lang in enumerate(lang_list, 1):
                 self.message.emit(f"📝 [{i}/{len(lang_list)}] Xử lý phụ đề ngôn ngữ: {lang}")
@@ -265,43 +262,6 @@ class DownloadWorker(QThread):
         
         self._rename_video_files(download_folder)
         
-        # Kiểm tra và báo cáo kết quả phụ đề cuối cùng
-        # self._check_subtitle_results(download_folder)
-
-    def _scan_all_subtitles(self, download_folder):
-        """Quét tất cả file phụ đề có sẵn"""
-        try:
-            self.message.emit("🔍 Đang quét tất cả file phụ đề...")
-            
-            # Tìm tất cả file có thể là phụ đề
-            all_files = os.listdir(download_folder)
-            subtitle_patterns = ['.srt', '.vtt', '.ass', '.sub', '.sbv', '.ttml']
-            
-            found_subtitles = []
-            for file in all_files:
-                if any(pattern in file.lower() for pattern in subtitle_patterns):
-                    found_subtitles.append(file)
-            
-            if found_subtitles:
-                self.message.emit(f"📄 Tìm thấy {len(found_subtitles)} file phụ đề:")
-                for subtitle in found_subtitles:
-                    self.message.emit(f"   📄 {subtitle}")
-                    
-                # Phân tích ngôn ngữ từ tên file
-                detected_langs = set()
-                for subtitle in found_subtitles:
-                    # Tìm mã ngôn ngữ trong tên file
-                    for lang in ["vi", "en", "zh-Hans", "zh-Hant", "ko", "ja", "fr", "es"]:
-                        if f".{lang}." in subtitle:
-                            detected_langs.add(lang)
-                
-                if detected_langs:
-                    self.message.emit(f"🌍 Phát hiện ngôn ngữ: {', '.join(detected_langs)}")
-            else:
-                self.message.emit("⚠️ Không tìm thấy file phụ đề nào trong quét ban đầu")
-                
-        except Exception as e:
-            self.message.emit(f"⚠️ Lỗi khi quét phụ đề: {e}")
 
 
     def _rename_subtitle_files(self, folder_path, sub_lang):
@@ -332,9 +292,9 @@ class DownloadWorker(QThread):
                 if sub_lang == "en":
                     # Xử lý đặc biệt cho tiếng Anh - đổi thành .srt chính
                     if subtitle_file.endswith(".en.srt"):
-                        print(f"🔍 Đang xử lý1 : {subtitle_file}")
+                        # print(f"🔍 Đang xử lý1 : {subtitle_file}")
                         new_name = subtitle_file.replace("..en.srt", ".srt").replace(".en.srt", ".srt")
-                        print(f"🔍 Đang xử lý: {new_name}")
+                        # print(f"🔍 Đang xử lý: {new_name}")
                         if not os.path.exists(new_name):
                             os.rename(subtitle_file, new_name)
                             self.message.emit(f"📝 Đổi tên: {filename} → {os.path.basename(new_name)}")
@@ -1055,7 +1015,7 @@ class DownloaderApp(QWidget):
             saved_urls = self.settings.value("urls", "")
             if saved_urls:
                 self.url_input.setText(saved_urls)
-                print(f"📋 Đã tải {len(saved_urls.splitlines())} URL")
+                print(f"📋 Đã tải {len(saved_urls.splitlines())} ")
             
             # Tải tên thư mục tùy chọn
             custom_folder = self.settings.value("custom_folder", "")
