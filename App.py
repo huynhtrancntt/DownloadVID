@@ -84,6 +84,40 @@ except Exception as e:
     debug_print("⚠️ Lỗi khi chạy ffmpeg:", e)
     debug_print("📁 Đang tìm ffmpeg trong thư mục ffmpeg/")
 
+# Kiểm tra phiên bản yt-dlp
+def check_ytdlp_version():
+    """Kiểm tra phiên bản yt-dlp"""
+    possible_paths = [
+        "yt-dlp.exe",  # Trong thư mục hiện tại
+        "yt-dlp",      # Trong PATH (Linux/Mac)
+    ]
+    
+    for ytdlp_path in possible_paths:
+        try:
+            result = subprocess.run([ytdlp_path, "--version"], capture_output=True, text=True, timeout=10)
+            if result.returncode == 0:
+                version = result.stdout.strip()
+                debug_print("✅ yt-dlp đã sẵn sàng:")
+                debug_print(f"📦 Phiên bản: {version}")
+                debug_print(f"📍 Đường dẫn: {ytdlp_path}")
+                return ytdlp_path, version
+        except subprocess.TimeoutExpired:
+            debug_print(f"⏱️ Timeout khi kiểm tra {ytdlp_path}")
+        except FileNotFoundError:
+            debug_print(f"❌ Không tìm thấy {ytdlp_path}")
+        except Exception as e:
+            debug_print(f"⚠️ Lỗi khi kiểm tra {ytdlp_path}: {e}")
+    
+    debug_print("❌ Không tìm thấy yt-dlp!")
+    debug_print("💡 Hướng dẫn cài đặt:")
+    debug_print("   1. Tải yt-dlp.exe từ: https://github.com/yt-dlp/yt-dlp/releases")
+    debug_print("   2. Đặt file yt-dlp.exe vào thư mục chứa App.py")
+    debug_print("   3. Hoặc cài đặt qua pip: pip install yt-dlp")
+    return None, None
+
+# Gọi kiểm tra yt-dlp
+ytdlp_executable, ytdlp_version = check_ytdlp_version()
+
 
 class DownloadWorker(QThread):
     """Worker thread để xử lý download video"""
@@ -205,22 +239,26 @@ class DownloadWorker(QThread):
 
     def _build_command(self, url, download_folder, index):
         """Xây dựng lệnh yt-dlp"""
-        # Tìm yt-dlp executable
-        ytdlp_path = None
-        possible_paths = [
-            "yt-dlp.exe",  # Trong PATH
-            "venv/Scripts/yt-dlp.exe",  # Trong venv
-            os.path.join(sys.prefix, "Scripts", "yt-dlp.exe"),  # Trong Python Scripts
-        ]
-        
-        for path in possible_paths:
-            if os.path.exists(path):
-                ytdlp_path = path
-                break
-        
-        if not ytdlp_path:
-            # Fallback to system yt-dlp
-            ytdlp_path = "yt-dlp"
+        # Sử dụng yt-dlp đã được kiểm tra từ trước
+        global ytdlp_executable
+        if ytdlp_executable:
+            ytdlp_path = ytdlp_executable
+        else:
+            # Fallback - tìm lại nếu cần
+            ytdlp_path = None
+            possible_paths = [
+                "yt-dlp.exe",  # Trong PATH
+                "yt-dlp",      # Fallback cho Linux/Mac
+            ]
+            
+            for path in possible_paths:
+                if os.path.exists(path):
+                    ytdlp_path = path
+                    break
+            
+            if not ytdlp_path:
+                # Fallback to system yt-dlp
+                ytdlp_path = "yt-dlp"
         
         cmd = [ytdlp_path, url, "--progress"]
         
@@ -259,31 +297,23 @@ class DownloadWorker(QThread):
 
     def _add_subtitle_options(self, cmd):
         """Thêm tùy chọn phụ đề vào lệnh"""
-        # Xử lý danh sách ngôn ngữ
-        if isinstance(self.sub_lang, list):
-            lang_string = ",".join(self.sub_lang)
-            lang_display = ", ".join(self.sub_lang)
-        else:
-            lang_string = self.sub_lang
-            lang_display = self.sub_lang
+        # sub_lang bây giờ là string đơn thay vì list
+        lang_string = self.sub_lang
+        lang_display = self.sub_lang
         
         if self.sub_mode == "📄 Phụ đề chính thức":
             cmd += ["--write-subs", "--sub-langs", lang_string]
-            self.message.emit(f"🔤 Tải phụ đề chính thức cho {len(self.sub_lang) if isinstance(self.sub_lang, list) else 1} ngôn ngữ: {lang_display}")
+            self.message.emit(f"🔤 Tải phụ đề chính thức cho ngôn ngữ: {lang_display}")
         elif self.sub_mode == "🤖 Phụ đề tự động":
             cmd += ["--write-auto-subs", "--sub-langs", lang_string]
-            self.message.emit(f"🤖 Tải phụ đề tự động cho {len(self.sub_lang) if isinstance(self.sub_lang, list) else 1} ngôn ngữ: {lang_display}")
+            self.message.emit(f"🤖 Tải phụ đề tự động cho ngôn ngữ: {lang_display}")
         
         # Thêm các tùy chọn để đảm bảo tải được phụ đề
         cmd += [
             "--ignore-errors",           # Bỏ qua lỗi nếu một ngôn ngữ không có
             "--no-warnings",            # Không hiển thị cảnh báo
             "--sub-format", "srt/best" # Ưu tiên định dạng SRT
-            # "--write-info-json"         # Ghi thông tin để debug
         ]
-        
-        # KHÔNG dùng --all-subs nữa, chỉ tải chính xác ngôn ngữ đã chọn
-        self.message.emit(f"🎯 Chỉ tải chính xác {len(self.sub_lang) if isinstance(self.sub_lang, list) else 1} ngôn ngữ đã chọn")
         
         # Debug: In ra lệnh phụ đề
         self.message.emit(f"🔧 Debug: Lệnh phụ đề = --sub-langs {lang_string}")
@@ -302,15 +332,9 @@ class DownloadWorker(QThread):
     def _post_process_files(self, download_folder):
         """Xử lý files sau khi download"""
         if self.sub_mode != "❌ Không tải":
-            # Đảm bảo sub_lang luôn là list
-            lang_list = self.sub_lang if isinstance(self.sub_lang, list) else [self.sub_lang]
-            
-            self.message.emit(f"🔄 Xử lý phụ đề cho {len(lang_list)} ngôn ngữ: {', '.join(lang_list)}")
-            
-            # Sau đó xử lý từng ngôn ngữ
-            for i, lang in enumerate(lang_list, 1):
-                self.message.emit(f"📝 [{i}/{len(lang_list)}] Xử lý phụ đề ngôn ngữ: {lang}")
-                self._rename_subtitle_files(download_folder, lang)
+            # sub_lang bây giờ là string đơn
+            self.message.emit(f"🔄 Xử lý phụ đề cho ngôn ngữ: {self.sub_lang}")
+            self._rename_subtitle_files(download_folder, self.sub_lang)
         
         self._rename_video_files(download_folder)
         
@@ -397,6 +421,44 @@ class DownloaderApp(QWidget):
         self.init_ui()
         self.apply_styles()
         self.load_settings()
+        
+        # Hiển thị thông tin phiên bản khi khởi động
+        self._show_startup_info()
+
+    def _show_startup_info(self):
+        """Hiển thị thông tin phiên bản khi khởi động"""
+        global ytdlp_executable, ytdlp_version
+        
+        # Thông tin cơ bản
+        app_info = "🎬 HT DownloadVID v1.0 - Khởi động thành công!"
+        debug_print(app_info)
+        
+        # Hiển thị thông tin trong log output của ứng dụng
+        self.output_list.addItem("=" * 50)
+        self.output_list.addItem("🎬 HT DownloadVID v1.0")
+        self.output_list.addItem("=" * 50)
+        
+        # Thông tin yt-dlp
+        if ytdlp_executable and ytdlp_version:
+            self.output_list.addItem(f"✅ yt-dlp: {ytdlp_version}")
+            self.output_list.addItem(f"📍 Đường dẫn: {ytdlp_executable}")
+        else:
+            self.output_list.addItem("❌ yt-dlp: Không tìm thấy!")
+            self.output_list.addItem("⚠️ Ứng dụng có thể không hoạt động đúng")
+        
+        # Thông tin ffmpeg
+        if os.path.exists(ffmpeg_path):
+            self.output_list.addItem("✅ ffmpeg: Đã sẵn sàng")
+            self.output_list.addItem(f"📍 Đường dẫn: {ffmpeg_path}")
+        else:
+            self.output_list.addItem("⚠️ ffmpeg: Không tìm thấy")
+        
+        self.output_list.addItem("=" * 50)
+        self.output_list.addItem("💡 Sẵn sàng tải video!")
+        self.output_list.addItem("")
+        
+        # Cuộn xuống cuối
+        self.scroll_to_bottom()
 
     def init_ui(self):
         """Khởi tạo giao diện người dùng"""
@@ -474,6 +536,13 @@ class DownloaderApp(QWidget):
         # Menu Help
         help_menu = self.menubar.addMenu("❓ Help")
         
+        # Action Check Tool Versions
+        version_action = QAction("🔧 Check Tool Versions", self)
+        version_action.triggered.connect(self.check_tool_versions)
+        help_menu.addAction(version_action)
+        
+        help_menu.addSeparator()
+        
         # Action View Log File
         log_action = QAction("📝 View Log File", self)
         log_action.triggered.connect(self.show_log_file)
@@ -530,8 +599,13 @@ class DownloaderApp(QWidget):
 
     def _create_subtitle_section(self):
         """Tạo phần tùy chọn phụ đề"""
-        self.layout.addWidget(QLabel("📝 Chế độ phụ đề:"))
+        self.layout.addWidget(QLabel("📝 Tùy chọn phụ đề:"))
         
+        # Tạo layout ngang cho chế độ phụ đề và ngôn ngữ
+        subtitle_layout = QHBoxLayout()
+        
+        # Chế độ phụ đề
+        subtitle_layout.addWidget(QLabel("Chế độ:"))
         self.sub_mode = QComboBox()
         self.sub_mode.addItems([
             "❌ Không tải",
@@ -539,93 +613,33 @@ class DownloaderApp(QWidget):
             "🤖 Phụ đề tự động"
         ])
         self.sub_mode.setCurrentText("🤖 Phụ đề tự động")
-        self.layout.addWidget(self.sub_mode)
-
-        self.layout.addWidget(QLabel("🌍 Ngôn ngữ phụ đề:"))
-        self._create_language_checkboxes()
-
-    def _create_language_checkboxes(self):
-        """Tạo các checkbox chọn ngôn ngữ"""
-        lang_widget = QWidget()
-        lang_layout = QVBoxLayout(lang_widget)
-        lang_layout.setContentsMargins(0, 0, 0, 0)
-        lang_layout.setSpacing(3)
-
-        self.lang_checkboxes = {}
-        languages = [
-            ("vi", "🇻🇳 Tiếng Việt"),
-            ("en", "🇺🇸 Tiếng Anh"), 
-            ("zh-Hans", "🇨🇳 Tiếng Trung (Giản thể)"),
-            ("zh-Hant", "🇹🇼 Tiếng Trung (Phồn thể)"),
-            ("ko", "🇰🇷 Tiếng Hàn"),
-            ("ja", "🇯🇵 Tiếng Nhật"),
-            ("fr", "🇫🇷 Tiếng Pháp"),
-            ("es", "🇪🇸 Tiếng Tây Ban Nha")
-        ]
-
-        # Tạo layout dạng lưới 4 cột
-        for i in range(0, len(languages), 4):
-            row_layout = QHBoxLayout()
-            row_layout.setSpacing(5)
-            
-            for j in range(4):
-                if i + j < len(languages):
-                    code, name = languages[i + j]
-                    checkbox = QCheckBox(name)
-                    checkbox.setObjectName("lang-checkbox")
-                    if code in ["vi", "en"]:
-                        checkbox.setChecked(True)
-                    # Kết nối signal để hiển thị trạng thái khi thay đổi
-                    checkbox.toggled.connect(lambda checked, lang_code=code: self.on_language_toggled(lang_code, checked))
-                    self.lang_checkboxes[code] = checkbox
-                    row_layout.addWidget(checkbox)
-            
-            row_layout.addStretch()
-            lang_layout.addLayout(row_layout)
-
-        # Thêm label hiển thị số ngôn ngữ đã chọn
-        self.selected_lang_label = QLabel("✅ Đã chọn: 2 ngôn ngữ (Tiếng Việt, Tiếng Anh)")
-        self.selected_lang_label.setStyleSheet("color: #28a745; font-weight: bold; margin: 5px 0px;")
-        lang_layout.addWidget(self.selected_lang_label)
-
-        self.layout.addWidget(lang_widget)
-
-    def on_language_toggled(self, lang_code, checked):
-        """Xử lý khi checkbox ngôn ngữ được thay đổi"""
-        self.update_selected_languages_display()
-        # Gọi auto-save nếu không đang load settings
-        if not (hasattr(self, 'loading_settings') and self.loading_settings):
-            self.auto_save_on_change()
-
-    def update_selected_languages_display(self):
-        """Cập nhật hiển thị ngôn ngữ đã chọn"""
-        selected_langs = []
-        lang_map = {
-            "vi": "🇻🇳 Tiếng Việt",
-            "en": "🇺🇸 Tiếng Anh", 
-            "zh-Hans": "🇨🇳 Tiếng Trung (Giản thể)",
-            "zh-Hant": "🇹🇼 Tiếng Trung (Phồn thể)",
-            "ko": "🇰🇷 Tiếng Hàn",
-            "ja": "🇯🇵 Tiếng Nhật",
-            "fr": "🇫🇷 Tiếng Pháp",
-            "es": "🇪🇸 Tiếng Tây Ban Nha"
-        }
+        subtitle_layout.addWidget(self.sub_mode)
         
-        for code, checkbox in self.lang_checkboxes.items():
-            if checkbox.isChecked():
-                selected_langs.append(lang_map.get(code, code))
+        # Ngôn ngữ phụ đề
+        subtitle_layout.addWidget(QLabel("Ngôn ngữ:"))
+        self.sub_lang = QComboBox()
+        self.sub_lang.addItems([
+            "🇻🇳 Tiếng Việt (vi)",
+            "🇺🇸 Tiếng Anh (en)", 
+            "🇨🇳 Tiếng Trung Giản thể (zh-Hans)",
+            "🇹🇼 Tiếng Trung Phồn thể (zh-Hant)",
+            "🇰🇷 Tiếng Hàn (ko)",
+            "🇯🇵 Tiếng Nhật (ja)",
+            "🇫🇷 Tiếng Pháp (fr)",
+            "🇪🇸 Tiếng Tây Ban Nha (es)"
+        ])
+        self.sub_lang.setCurrentText("🇻🇳 Tiếng Việt (vi)")
+        subtitle_layout.addWidget(self.sub_lang)
         
-        if selected_langs:
-            if len(selected_langs) <= 3:
-                lang_text = ", ".join(selected_langs)
-            else:
-                lang_text = f"{', '.join(selected_langs[:2])} và {len(selected_langs)-2} ngôn ngữ khác"
-            
-            self.selected_lang_label.setText(f"✅ Đã chọn: {len(selected_langs)} ngôn ngữ ({lang_text})")
-            self.selected_lang_label.setStyleSheet("color: #28a745; font-weight: bold; margin: 5px 0px;")
-        else:
-            self.selected_lang_label.setText("⚠️ Chưa chọn ngôn ngữ nào - sẽ dùng mặc định")
-            self.selected_lang_label.setStyleSheet("color: #dc3545; font-weight: bold; margin: 5px 0px;")
+        self.layout.addLayout(subtitle_layout)
+
+    def _get_selected_language_code(self):
+        """Lấy mã ngôn ngữ từ combobox đã chọn"""
+        selected_text = self.sub_lang.currentText()
+        # Extract language code từ text (ví dụ: "🇻🇳 Tiếng Việt (vi)" -> "vi")
+        if "(" in selected_text and ")" in selected_text:
+            return selected_text.split("(")[-1].split(")")[0]
+        return "vi"  # Default fallback
 
     def _create_options_section(self):
         """Tạo phần tùy chọn bổ sung"""
@@ -701,6 +715,7 @@ class DownloaderApp(QWidget):
         
         # Combobox
         self.sub_mode.currentTextChanged.connect(self.auto_save_on_change)
+        self.sub_lang.currentTextChanged.connect(self.auto_save_on_change)
         
         # Checkboxes
         self.convert_srt.toggled.connect(self.auto_save_on_change)
@@ -732,47 +747,15 @@ class DownloaderApp(QWidget):
 
         self._prepare_ui_for_download()
         
-        # Lấy danh sách ngôn ngữ đã chọn
-        selected_lang_codes = [
-            code for code, checkbox in self.lang_checkboxes.items() 
-            if checkbox.isChecked()
-        ]
-        
-        if not selected_lang_codes:
-            selected_lang_codes = ["vi", "en"]
-            self.output_list.addItem("⚠️ Không có ngôn ngữ nào được chọn, sử dụng mặc định: vi, en")
+        # Lấy ngôn ngữ đã chọn từ combobox
+        selected_lang_code = self._get_selected_language_code()
 
         # Debug: Hiển thị thông tin cấu hình chi tiết
         self.output_list.addItem("🔧 === THÔNG TIN CẤU HÌNH ===")
         self.output_list.addItem(f"🔗 Số URL: {len(urls)}")
         self.output_list.addItem(f"🎬 Chế độ: {'Video đơn' if self.video_radio.isChecked() else 'Playlist'}")
         self.output_list.addItem(f"📝 Phụ đề: {self.sub_mode.currentText()}")
-        self.output_list.addItem(f"🌍 Ngôn ngữ phụ đề ({len(selected_lang_codes)}): {', '.join(selected_lang_codes)}")
-        
-        # Hiển thị tên ngôn ngữ đầy đủ với trạng thái
-        lang_names = []
-        lang_map = {
-            "vi": "🇻🇳 Tiếng Việt",
-            "en": "🇺🇸 Tiếng Anh", 
-            "zh-Hans": "🇨🇳 Tiếng Trung (Giản thể)",
-            "zh-Hant": "🇹🇼 Tiếng Trung (Phồn thể)",
-            "ko": "🇰🇷 Tiếng Hàn",
-            "ja": "🇯🇵 Tiếng Nhật",
-            "fr": "🇫🇷 Tiếng Pháp",
-            "es": "🇪🇸 Tiếng Tây Ban Nha"
-        }
-        
-        for code in selected_lang_codes:
-            lang_names.append(lang_map.get(code, f"❓ {code}"))
-        
-        self.output_list.addItem(f"📋 Sẽ tải phụ đề: {', '.join(lang_names)}")
-        
-        # Hiển thị trạng thái tất cả ngôn ngữ trong UI
-        self.output_list.addItem("🔍 Trạng thái chọn ngôn ngữ trong UI:")
-        for code, checkbox in self.lang_checkboxes.items():
-            status = "✅ ĐÃ CHỌN" if checkbox.isChecked() else "❌ Không chọn"
-            lang_name = lang_map.get(code, f"❓ {code}")
-            self.output_list.addItem(f"   {lang_name}: {status}")
+        self.output_list.addItem(f"🌍 Ngôn ngữ phụ đề: {self.sub_lang.currentText()}")
         
         # Hiển thị các tùy chọn khác
         options = []
@@ -800,7 +783,7 @@ class DownloaderApp(QWidget):
             video_mode=self.video_radio.isChecked(),
             audio_only=self.audio_only.isChecked(),
             sub_mode=self.sub_mode.currentText(),
-            sub_lang=selected_lang_codes,
+            sub_lang=selected_lang_code,  # Truyền string thay vì list
             convert_srt=self.convert_srt.isChecked(),
             include_thumb=self.include_thumb.isChecked(),
             subtitle_only=self.subtitle_only.isChecked(),
@@ -1104,22 +1087,26 @@ class DownloaderApp(QWidget):
             debug_print(f"📝 Chế độ phụ đề: {subtitle_mode}")
             
             # Tải ngôn ngữ phụ đề
-            selected_langs = self.settings.value("selected_languages", ["vi", "en"])
-            if isinstance(selected_langs, str):
-                selected_langs = [selected_langs]
+            selected_lang_code = self.settings.value("selected_language", "vi")
             
-            # Reset tất cả checkbox về False trước
-            for checkbox in self.lang_checkboxes.values():
-                checkbox.setChecked(False)
+            # Tìm và chọn ngôn ngữ trong combobox
+            lang_map = {
+                "vi": "🇻🇳 Tiếng Việt (vi)",
+                "en": "🇺🇸 Tiếng Anh (en)", 
+                "zh-Hans": "🇨🇳 Tiếng Trung Giản thể (zh-Hans)",
+                "zh-Hant": "🇹🇼 Tiếng Trung Phồn thể (zh-Hant)",
+                "ko": "🇰🇷 Tiếng Hàn (ko)",
+                "ja": "🇯🇵 Tiếng Nhật (ja)",
+                "fr": "🇫🇷 Tiếng Pháp (fr)",
+                "es": "🇪🇸 Tiếng Tây Ban Nha (es)"
+            }
             
-            # Chọn các ngôn ngữ đã lưu
-            for lang in selected_langs:
-                if lang in self.lang_checkboxes:
-                    self.lang_checkboxes[lang].setChecked(True)
-            debug_print(f"🌍 Đã tải {len(selected_langs)} ngôn ngữ: {selected_langs}")
+            if selected_lang_code in lang_map:
+                self.sub_lang.setCurrentText(lang_map[selected_lang_code])
+            debug_print(f"🌍 Đã tải ngôn ngữ: {selected_lang_code}")
             
             # Cập nhật hiển thị ngôn ngữ đã chọn
-            self.update_selected_languages_display()
+            # self.update_selected_languages_display() is not defined in this class.
             
             # Tải các tùy chọn
             self.convert_srt.setChecked(self.settings.value("convert_srt", True, bool))
@@ -1177,8 +1164,7 @@ class DownloaderApp(QWidget):
         self.sub_mode.setCurrentText("🤖 Phụ đề tự động")
         
         # Ngôn ngữ mặc định
-        for code, checkbox in self.lang_checkboxes.items():
-            checkbox.setChecked(code in ["vi", "en"])
+        self.sub_lang.setCurrentText("🇻�� Tiếng Việt (vi)")
         
         # Tùy chọn mặc định
         self.convert_srt.setChecked(True)
@@ -1207,11 +1193,8 @@ class DownloaderApp(QWidget):
             self.settings.setValue("subtitle_mode", self.sub_mode.currentText())
             
             # Lưu ngôn ngữ phụ đề đã chọn
-            selected_langs = []
-            for code, checkbox in self.lang_checkboxes.items():
-                if checkbox.isChecked():
-                    selected_langs.append(code)
-            self.settings.setValue("selected_languages", selected_langs)
+            selected_lang_code = self._get_selected_language_code() # Get the current text from the combobox
+            self.settings.setValue("selected_language", selected_lang_code) # Save as a single string
             
             # Lưu các tùy chọn
             self.settings.setValue("convert_srt", self.convert_srt.isChecked())
@@ -1242,7 +1225,7 @@ class DownloaderApp(QWidget):
         debug_print(f"🔗 URLs trong UI: {len(self.url_input.toPlainText().splitlines())} dòng")
         debug_print(f"🎬 Video mode: {self.settings.value('video_mode', 'NONE')}")
         debug_print(f"📝 Subtitle mode: {self.settings.value('subtitle_mode', 'NONE')}")
-        debug_print(f"🌍 Languages: {self.settings.value('selected_languages', 'NONE')}")
+        debug_print(f"🌍 Languages: {self.settings.value('selected_language', 'NONE')}") # Changed from selected_languages
         debug_print("=" * 60)
 
     def show_about(self):
@@ -1277,10 +1260,8 @@ class DownloaderApp(QWidget):
             url_count = len([url for url in saved_urls.splitlines() if url.strip()]) if saved_urls else 0
             
             # Đếm ngôn ngữ đã chọn
-            selected_langs = self.settings.value("selected_languages", [])
-            if isinstance(selected_langs, str):
-                selected_langs = [selected_langs]
-            lang_count = len(selected_langs) if selected_langs else 0
+            selected_lang_code = self.settings.value("selected_language", "vi")
+            lang_display = selected_lang_code if selected_lang_code else "Không có"
             
             # Kiểm tra thư mục tùy chọn - Hiển thị chi tiết hơn
             custom_folder = self.settings.value("custom_folder", "")
@@ -1292,7 +1273,7 @@ class DownloaderApp(QWidget):
             <tr><td><b>🔢 Số lần sử dụng:</b></td><td>{usage_count}</td></tr>
             <tr><td><b>🕒 Lần lưu cuối:</b></td><td>{last_saved}</td></tr>
             <tr><td><b>🔗 Số URL đã lưu:</b></td><td>{url_count}</td></tr>
-            <tr><td><b>🌍 Ngôn ngữ đã chọn:</b></td><td>{lang_count}</td></tr>
+            <tr><td><b>🌍 Ngôn ngữ đã chọn:</b></td><td>{lang_display}</td></tr>
             <tr><td><b>📁 Thư mục tùy chọn:</b></td><td>{folder_display}</td></tr>
             <tr><td><b>🎬 Chế độ video:</b></td><td>{"Video đơn" if self.video_radio.isChecked() else "Playlist"}</td></tr>
             <tr><td><b>📝 Chế độ phụ đề:</b></td><td>{self.sub_mode.currentText()}</td></tr>
@@ -1345,6 +1326,33 @@ class DownloaderApp(QWidget):
                 
         except Exception as e:
             QMessageBox.warning(self, "Lỗi", f"❌ Không thể đọc file log: {e}")
+
+    def check_tool_versions(self):
+        """Hiển thị thông tin phiên bản của các công cụ đang sử dụng"""
+        self.output_list.addItem("🔧 === THÔNG TIN PHIÊN BẢN CÔNG CỤ ===")
+        
+        if ytdlp_executable:
+            self.output_list.addItem(f"✅ yt-dlp: {ytdlp_version}")
+            self.output_list.addItem(f"📍 Đường dẫn: {ytdlp_executable}")
+        else:
+            self.output_list.addItem("❌ yt-dlp: Không tìm thấy!")
+            self.output_list.addItem("💡 Hướng dẫn cài đặt:")
+            self.output_list.addItem("   1. Tải yt-dlp.exe từ: https://github.com/yt-dlp/yt-dlp/releases")
+            self.output_list.addItem("   2. Đặt file yt-dlp.exe vào thư mục chứa App.py")
+            self.output_list.addItem("   3. Hoặc cài đặt qua pip: pip install yt-dlp")
+
+        if os.path.exists(ffmpeg_path):
+            self.output_list.addItem("✅ ffmpeg: Đã sẵn sàng")
+            self.output_list.addItem(f"📍 Đường dẫn: {ffmpeg_path}")
+        else:
+            self.output_list.addItem("⚠️ ffmpeg: Không tìm thấy")
+            self.output_list.addItem("💡 Hướng dẫn cài đặt:")
+            self.output_list.addItem("   1. Tải FFmpeg từ: https://ffmpeg.org/download.html")
+            self.output_list.addItem("   2. Giải nén và đặt file ffmpeg.exe vào thư mục chứa App.py")
+            self.output_list.addItem("   3. Hoặc cài đặt qua pip: pip install ffmpeg-python")
+
+        self.output_list.addItem("🔧 ========================")
+        self.scroll_to_bottom()
 
     def closeEvent(self, event):
         """Xử lý khi đóng ứng dụng - tự động lưu settings"""
