@@ -1,7 +1,7 @@
 {
     "url": "https://raw.githubusercontent.com/huynhtrancntt/DownloadVID/main/update_v1.1.0.zip",
-    "assets_url": "https://api.github.com/repos/your-username/DownloadVID/releases/123456/assets",
-    "upload_url": "https://uploads.github.com/repos/your-username/DownloadVID/releases/123456/assets{?name,label}",
+    "assets_url": "hhttps://raw.githubusercontent.com/huynhtrancntt/DownloadVID/main/update_v1.1.0.zip",
+    "upload_url": "https://raw.githubusercontent.com/huynhtrancntt/DownloadVID/main/update_v1.1.0.zip",
     "html_url": "https://raw.githubusercontent.com/huynhtrancntt/DownloadVID/main/update_v1.1.0.zip",
     "id": 123456,
     "tag_name": "v1.0.1",
@@ -14,7 +14,7 @@
     "body": "## 🔄 Cập nhật v1.0.1\n\n### ✅ Sửa lỗi:\n- Sửa lỗi download playlist\n- Cải thiện xử lý phụ đề\n- Tối ưu hiệu suất\n\n### 🆕 Tính năng mới:\n- Thêm hỗ trợ ngôn ngữ mới\n- Cải thiện giao diện",
     "assets": [
         {
-            "url": "https://api.github.com/repos/your-username/DownloadVID/releases/assets/789",
+            "url": "https://raw.githubusercontent.com/huynhtrancntt/DownloadVID/main/update_v1.1.0.zip",
             "browser_download_url": "https://raw.githubusercontent.com/huynhtrancntt/DownloadVID/main/update_v1.1.0.zip",
             "name": "DownloadVID-v1.0.1.exe",
             "size": 45678901,
