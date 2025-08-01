@@ -1,0 +1,24 @@
+{
+    "url": "https://api.github.com/repos/your-username/DownloadVID/releases/123456",
+    "assets_url": "https://api.github.com/repos/your-username/DownloadVID/releases/123456/assets",
+    "upload_url": "https://uploads.github.com/repos/your-username/DownloadVID/releases/123456/assets{?name,label}",
+    "html_url": "https://github.com/your-username/DownloadVID/releases/tag/v1.0.1",
+    "id": 123456,
+    "tag_name": "v1.0.1",
+    "target_commitish": "main",
+    "name": "HT DownloadVID v1.0.1 - Bug Fixes",
+    "draft": false,
+    "prerelease": false,
+    "created_at": "2024-01-15T10:30:00Z",
+    "published_at": "2024-01-15T10:35:00Z",
+    "body": "## 🔄 Cập nhật v1.0.1\n\n### ✅ Sửa lỗi:\n- Sửa lỗi download playlist\n- Cải thiện xử lý phụ đề\n- Tối ưu hiệu suất\n\n### 🆕 Tính năng mới:\n- Thêm hỗ trợ ngôn ngữ mới\n- Cải thiện giao diện",
+    "assets": [
+        {
+            "url": "https://api.github.com/repos/your-username/DownloadVID/releases/assets/789",
+            "browser_download_url": "https://github.com/your-username/DownloadVID/releases/download/v1.0.1/DownloadVID-v1.0.1.exe",
+            "name": "DownloadVID-v1.0.1.exe",
+            "size": 45678901,
+            "download_count": 150
+        }
+    ]
+}

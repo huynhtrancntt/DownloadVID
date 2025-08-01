@@ -2,3 +2,5 @@ ffmpeg.exe
 venv
 build
 dist
+DownloadVID.log
+App.py

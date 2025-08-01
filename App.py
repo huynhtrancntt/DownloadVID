@@ -3,14 +3,17 @@ import os
 import subprocess
 import glob
 import logging
+import requests
+import json
+import webbrowser
 from datetime import datetime
 from PySide6.QtWidgets import (
     QApplication, QWidget, QLabel, QVBoxLayout, QPushButton,
     QTextEdit, QCheckBox, QComboBox, QRadioButton,
     QHBoxLayout, QButtonGroup, QMessageBox, QProgressBar, QListWidget, QListWidgetItem,
-    QFileDialog, QMenuBar, QMenu
+    QFileDialog, QMenuBar, QMenu, QDialog
 )
-from PySide6.QtCore import Qt, QThread, Signal, QSettings
+from PySide6.QtCore import Qt, QThread, Signal, QSettings, QTimer
 from PySide6.QtGui import QScreen, QAction, QIcon
 
 # Thiết lập logging
@@ -54,6 +57,184 @@ def setup_logging():
 
 # Khởi tạo logger
 logger = setup_logging()
+
+# Phiên bản ứng dụng
+APP_VERSION = "1.0.0"
+UPDATE_CHECK_URL = "https://api.github.com/repos/your-username/DownloadVID/releases/latest"  # Thay đổi URL này
+UPDATE_DOWNLOAD_URL = "https://github.com/your-username/DownloadVID/releases/latest"  # Thay đổi URL này
+
+class UpdateChecker(QThread):
+    """Worker thread để kiểm tra update"""
+    update_available = Signal(dict)
+    no_update = Signal()
+    error_occurred = Signal(str)
+    
+    def __init__(self):
+        super().__init__()
+        
+    def run(self):
+        """Kiểm tra phiên bản mới"""
+        try:
+            debug_print("🔍 Đang kiểm tra phiên bản mới...")
+            
+            # Gửi request để lấy thông tin release mới nhất
+            response = requests.get(UPDATE_CHECK_URL, timeout=10)
+            
+            if response.status_code == 200:
+                release_data = response.json()
+                latest_version = release_data.get('tag_name', '').replace('v', '')
+                release_name = release_data.get('name', '')
+                release_notes = release_data.get('body', '')
+                download_url = release_data.get('html_url', UPDATE_DOWNLOAD_URL)
+                published_at = release_data.get('published_at', '')
+                
+                # So sánh phiên bản
+                if self._is_newer_version(latest_version, APP_VERSION):
+                    update_info = {
+                        'version': latest_version,
+                        'name': release_name,
+                        'notes': release_notes,
+                        'download_url': download_url,
+                        'published_at': published_at
+                    }
+                    self.update_available.emit(update_info)
+                else:
+                    self.no_update.emit()
+            else:
+                self.error_occurred.emit(f"HTTP {response.status_code}: Không thể kết nối đến server")
+                
+        except requests.exceptions.Timeout:
+            self.error_occurred.emit("Timeout: Không thể kết nối đến server trong thời gian quy định")
+        except requests.exceptions.ConnectionError:
+            self.error_occurred.emit("Lỗi kết nối: Kiểm tra kết nối internet")
+        except Exception as e:
+            self.error_occurred.emit(f"Lỗi không xác định: {str(e)}")
+    
+    def _is_newer_version(self, latest, current):
+        """So sánh 2 phiên bản"""
+        try:
+            # Chuyển đổi version string thành list số
+            latest_parts = [int(x) for x in latest.split('.')]
+            current_parts = [int(x) for x in current.split('.')]
+            
+            # Đảm bảo cả 2 list có cùng độ dài
+            max_len = max(len(latest_parts), len(current_parts))
+            latest_parts.extend([0] * (max_len - len(latest_parts)))
+            current_parts.extend([0] * (max_len - len(current_parts)))
+            
+            # So sánh từng phần
+            for i in range(max_len):
+                if latest_parts[i] > current_parts[i]:
+                    return True
+                elif latest_parts[i] < current_parts[i]:
+                    return False
+            
+            return False  # Bằng nhau
+        except:
+            return False
+
+class UpdateDialog(QDialog):
+    """Dialog hiển thị thông tin update"""
+    
+    def __init__(self, update_info, parent=None):
+        super().__init__(parent)
+        self.update_info = update_info
+        self.init_ui()
+        
+    def init_ui(self):
+        """Khởi tạo giao diện dialog"""
+        self.setWindowTitle("🔄 Cập nhật có sẵn")
+        self.setMinimumWidth(500)
+        self.setMinimumHeight(400)
+        
+        layout = QVBoxLayout()
+        self.setLayout(layout)
+        
+        # Tiêu đề
+        title_label = QLabel(f"🎉 Phiên bản mới có sẵn: v{self.update_info['version']}")
+        title_label.setStyleSheet("font-size: 16px; font-weight: bold; color: #28a745; margin: 10px;")
+        layout.addWidget(title_label)
+        
+        # Thông tin phiên bản hiện tại
+        current_label = QLabel(f"📱 Phiên bản hiện tại: v{APP_VERSION}")
+        current_label.setStyleSheet("font-size: 13px; color: #6c757d; margin: 5px;")
+        layout.addWidget(current_label)
+        
+        # Tên release
+        if self.update_info.get('name'):
+            name_label = QLabel(f"📋 Tên phiên bản: {self.update_info['name']}")
+            name_label.setStyleSheet("font-size: 13px; margin: 5px;")
+            layout.addWidget(name_label)
+        
+        # Ngày phát hành
+        if self.update_info.get('published_at'):
+            try:
+                from datetime import datetime
+                pub_date = datetime.fromisoformat(self.update_info['published_at'].replace('Z', '+00:00'))
+                date_str = pub_date.strftime("%d/%m/%Y %H:%M")
+                date_label = QLabel(f"📅 Ngày phát hành: {date_str}")
+                date_label.setStyleSheet("font-size: 13px; margin: 5px;")
+                layout.addWidget(date_label)
+            except:
+                pass
+        
+        # Release notes
+        if self.update_info.get('notes'):
+            notes_label = QLabel("📝 Ghi chú phiên bản:")
+            notes_label.setStyleSheet("font-weight: bold; margin-top: 15px;")
+            layout.addWidget(notes_label)
+            
+            notes_text = QTextEdit()
+            notes_text.setPlainText(self.update_info['notes'])
+            notes_text.setReadOnly(True)
+            notes_text.setMaximumHeight(150)
+            layout.addWidget(notes_text)
+        
+        # Buttons
+        button_layout = QHBoxLayout()
+        
+        download_button = QPushButton("🔗 Tải về")
+        download_button.clicked.connect(self.download_update)
+        download_button.setStyleSheet("""
+            QPushButton {
+                background-color: #007bff;
+                color: white;
+                font-weight: bold;
+                padding: 10px 20px;
+                border-radius: 5px;
+            }
+            QPushButton:hover {
+                background-color: #0056b3;
+            }
+        """)
+        
+        later_button = QPushButton("⏰ Để sau")
+        later_button.clicked.connect(self.reject)
+        later_button.setStyleSheet("""
+            QPushButton {
+                background-color: #6c757d;
+                color: white;
+                font-weight: bold;
+                padding: 10px 20px;
+                border-radius: 5px;
+            }
+            QPushButton:hover {
+                background-color: #545b62;
+            }
+        """)
+        
+        button_layout.addWidget(download_button)
+        button_layout.addWidget(later_button)
+        layout.addLayout(button_layout)
+        
+    def download_update(self):
+        """Mở trang download"""
+        try:
+            webbrowser.open(self.update_info['download_url'])
+            self.accept()
+        except Exception as e:
+            QMessageBox.warning(self, "Lỗi", f"Không thể mở trình duyệt: {e}")
+
 
 def debug_print(message):
     """In debug message - sẽ ghi vào file log khi không có console"""
@@ -416,6 +597,7 @@ class DownloaderApp(QWidget):
     def __init__(self):
         super().__init__()
         self.worker = None
+        self.update_checker = None  # Update checker thread
         self.settings = QSettings("HT Software", "DownloadVID")
         self.loading_settings = False  # Flag để tránh auto-save khi đang load
         self.init_ui()
@@ -424,18 +606,21 @@ class DownloaderApp(QWidget):
         
         # Hiển thị thông tin phiên bản khi khởi động
         self._show_startup_info()
+        
+        # Kiểm tra update tự động khi khởi động (sau 3 giây)
+        QTimer.singleShot(3000, self.auto_check_update)
 
     def _show_startup_info(self):
         """Hiển thị thông tin phiên bản khi khởi động"""
         global ytdlp_executable, ytdlp_version
         
         # Thông tin cơ bản
-        app_info = "🎬 HT DownloadVID v1.0 - Khởi động thành công!"
+        app_info = f"🎬 HT DownloadVID v{APP_VERSION} - Khởi động thành công!"
         debug_print(app_info)
         
         # Hiển thị thông tin trong log output của ứng dụng
         self.output_list.addItem("=" * 50)
-        self.output_list.addItem("🎬 HT DownloadVID v1.0")
+        self.output_list.addItem(f"🎬 HT DownloadVID v{APP_VERSION}")
         self.output_list.addItem("=" * 50)
         
         # Thông tin yt-dlp
@@ -462,7 +647,7 @@ class DownloaderApp(QWidget):
 
     def init_ui(self):
         """Khởi tạo giao diện người dùng"""
-        self.setWindowTitle("HT DownloadVID v1.0")
+        self.setWindowTitle(f"HT DownloadVID v{APP_VERSION}")
         
         # Thiết lập icon cho cửa sổ
         icon_path = resource_path("ico.ico")
@@ -535,6 +720,13 @@ class DownloaderApp(QWidget):
         
         # Menu Help
         help_menu = self.menubar.addMenu("❓ Help")
+        
+        # Action Check for Updates
+        update_action = QAction("🔄 Check for Updates", self)
+        update_action.triggered.connect(self.manual_check_update)
+        help_menu.addAction(update_action)
+        
+        help_menu.addSeparator()
         
         # Action Check Tool Versions
         version_action = QAction("🔧 Check Tool Versions", self)
@@ -1230,10 +1422,10 @@ class DownloaderApp(QWidget):
 
     def show_about(self):
         """Hiển thị thông tin về ứng dụng"""
-        about_text = """
-        <h3>🎬 HT DownloadVID v1.0</h3>
+        about_text = f"""
+        <h3>🎬 HT DownloadVID v{APP_VERSION}</h3>
         <p><b>Ứng dụng download video và phụ đề</b></p>
-        <p>📅 Phiên bản: 1.0</p>
+        <p>📅 Phiên bản: {APP_VERSION}</p>
         <p>👨‍💻 Phát triển bởi: HT Software</p>
         <p>🔧 Sử dụng: yt-dlp + ffmpeg</p>
         <br>
@@ -1244,6 +1436,7 @@ class DownloaderApp(QWidget):
         <li>✅ Download phụ đề đa ngôn ngữ</li>
         <li>✅ Chuyển đổi audio sang MP3</li>
         <li>✅ Lưu settings tự động</li>
+        <li>✅ Kiểm tra cập nhật tự động</li>
         </ul>
         """
         
@@ -1353,6 +1546,79 @@ class DownloaderApp(QWidget):
 
         self.output_list.addItem("🔧 ========================")
         self.scroll_to_bottom()
+
+    def auto_check_update(self):
+        """Tự động kiểm tra update khi khởi động (im lặng)"""
+        # Kiểm tra xem có nên auto-check không (có thể thêm setting để tắt/bật)
+        auto_check_enabled = self.settings.value("auto_check_update", True, bool)
+        if not auto_check_enabled:
+            return
+            
+        # Kiểm tra lần cuối check (tránh check quá thường xuyên)
+        last_check = self.settings.value("last_update_check", "")
+        if last_check:
+            try:
+                from datetime import datetime, timedelta
+                last_check_date = datetime.fromisoformat(last_check)
+                if datetime.now() - last_check_date < timedelta(days=1):
+                    debug_print("🔄 Đã check update trong 24h qua, bỏ qua auto-check")
+                    return
+            except:
+                pass
+        
+        self._start_update_check(silent=True)
+
+    def manual_check_update(self):
+        """Kiểm tra update thủ công (có thông báo)"""
+        self.output_list.addItem("🔄 Đang kiểm tra phiên bản mới...")
+        self.scroll_to_bottom()
+        self._start_update_check(silent=False)
+
+    def _start_update_check(self, silent=False):
+        """Bắt đầu kiểm tra update"""
+        if self.update_checker and self.update_checker.isRunning():
+            if not silent:
+                QMessageBox.information(self, "Thông báo", "Đang kiểm tra update, vui lòng đợi...")
+            return
+        
+        self.update_checker = UpdateChecker()
+        self.update_checker.update_available.connect(lambda info: self._on_update_available(info, silent))
+        self.update_checker.no_update.connect(lambda: self._on_no_update(silent))
+        self.update_checker.error_occurred.connect(lambda error: self._on_update_error(error, silent))
+        self.update_checker.start()
+        
+        # Lưu thời gian check
+        self.settings.setValue("last_update_check", datetime.now().isoformat())
+
+    def _on_update_available(self, update_info, silent):
+        """Xử lý khi có update"""
+        debug_print(f"🎉 Phiên bản mới có sẵn: v{update_info['version']}")
+        
+        if not silent:
+            self.output_list.addItem(f"🎉 Phiên bản mới có sẵn: v{update_info['version']}")
+            self.scroll_to_bottom()
+        
+        # Hiển thị dialog update
+        dialog = UpdateDialog(update_info, self)
+        dialog.exec()
+
+    def _on_no_update(self, silent):
+        """Xử lý khi không có update"""
+        debug_print("✅ Bạn đang sử dụng phiên bản mới nhất")
+        
+        if not silent:
+            self.output_list.addItem("✅ Bạn đang sử dụng phiên bản mới nhất")
+            self.scroll_to_bottom()
+            QMessageBox.information(self, "Thông báo", f"✅ Bạn đang sử dụng phiên bản mới nhất (v{APP_VERSION})")
+
+    def _on_update_error(self, error_message, silent):
+        """Xử lý lỗi khi kiểm tra update"""
+        debug_print(f"⚠️ Lỗi kiểm tra update: {error_message}")
+        
+        if not silent:
+            self.output_list.addItem(f"⚠️ Lỗi kiểm tra update: {error_message}")
+            self.scroll_to_bottom()
+            QMessageBox.warning(self, "Lỗi", f"⚠️ Không thể kiểm tra update:\n{error_message}")
 
     def closeEvent(self, event):
         """Xử lý khi đóng ứng dụng - tự động lưu settings"""
