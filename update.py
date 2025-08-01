@@ -3,7 +3,7 @@ import sys
 import time
 
 CURRENT_VERSION = "1.0.0"
-UPDATE_INFO_URL = "https://yourdomain.com/update_info.json"
+UPDATE_INFO_URL = "https://raw.githubusercontent.com/huynhtrancntt/DownloadVID/main/update_info.json"
 
 
 def check_for_update():
