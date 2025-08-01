@@ -33,7 +33,17 @@ echo.
 python build_exe.py
 
 echo.
-echo ========================================
-echo 🏁 Quá trình build hoàn tất
+if exist "dist\HT_DownloadVID.exe" (
+    echo ✅ Build successful!
+    echo 📁 Executable location: dist\HT_DownloadVID.exe
+    echo 📝 Log file will be created as: DownloadVID.log
+    echo.
+    echo 🎉 You can now run: dist\HT_DownloadVID.exe
+) else (
+    echo ❌ Build failed!
+    echo Please check the error messages above.
+)
+
 echo.
-pause 
+echo Press any key to exit...
+pause > nul 

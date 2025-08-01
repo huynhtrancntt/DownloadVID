@@ -2,6 +2,7 @@ import sys
 import os
 import subprocess
 import glob
+import logging
 from datetime import datetime
 from PySide6.QtWidgets import (
     QApplication, QWidget, QLabel, QVBoxLayout, QPushButton,
@@ -10,7 +11,58 @@ from PySide6.QtWidgets import (
     QFileDialog, QMenuBar, QMenu
 )
 from PySide6.QtCore import Qt, QThread, Signal, QSettings
-from PySide6.QtGui import QScreen, QAction
+from PySide6.QtGui import QScreen, QAction, QIcon
+
+# Thiết lập logging
+def setup_logging():
+    """Thiết lập hệ thống logging"""
+    log_file = os.path.join(os.getcwd(), "DownloadVID.log")
+    
+    # Tạo logger
+    logger = logging.getLogger('DownloadVID')
+    logger.setLevel(logging.DEBUG)
+    
+    # Xóa các handler cũ nếu có
+    for handler in logger.handlers[:]:
+        logger.removeHandler(handler)
+    
+    # File handler
+    file_handler = logging.FileHandler(log_file, encoding='utf-8')
+    file_handler.setLevel(logging.DEBUG)
+    
+    # Console handler (chỉ khi có console)
+    if hasattr(sys, '_MEIPASS'):
+        # Đang chạy từ exe, không có console
+        console_handler = None
+    else:
+        # Đang chạy từ Python, có console
+        console_handler = logging.StreamHandler()
+        console_handler.setLevel(logging.INFO)
+    
+    # Formatter
+    formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
+    file_handler.setFormatter(formatter)
+    if console_handler:
+        console_handler.setFormatter(formatter)
+    
+    # Thêm handlers
+    logger.addHandler(file_handler)
+    if console_handler:
+        logger.addHandler(console_handler)
+    
+    return logger
+
+# Khởi tạo logger
+logger = setup_logging()
+
+def debug_print(message):
+    """In debug message - sẽ ghi vào file log khi không có console"""
+    logger.info(message)
+    # Vẫn giữ print cho compatibility
+    try:
+        print(message)
+    except:
+        pass  # Bỏ qua nếu không có console
 
 
 def resource_path(relative_path):
@@ -26,11 +78,11 @@ ffmpeg_path = resource_path(os.path.join("ffmpeg", "ffmpeg.exe"))
 # Gọi thử ffmpeg
 try:
     result = subprocess.run([ffmpeg_path, "-version"], capture_output=True, text=True)
-    print("✅ FFmpeg đã sẵn sàng:")
-    print(result.stdout.split('\n')[0])  # Chỉ hiển thị dòng đầu tiên
+    debug_print("✅ FFmpeg đã sẵn sàng:")
+    debug_print(result.stdout.split('\n')[0])  # Chỉ hiển thị dòng đầu tiên
 except Exception as e:
-    print("⚠️ Lỗi khi chạy ffmpeg:", e)
-    print("📁 Đang tìm ffmpeg trong thư mục ffmpeg/")
+    debug_print("⚠️ Lỗi khi chạy ffmpeg:", e)
+    debug_print("📁 Đang tìm ffmpeg trong thư mục ffmpeg/")
 
 
 class DownloadWorker(QThread):
@@ -349,6 +401,12 @@ class DownloaderApp(QWidget):
     def init_ui(self):
         """Khởi tạo giao diện người dùng"""
         self.setWindowTitle("HT DownloadVID v1.0")
+        
+        # Thiết lập icon cho cửa sổ
+        icon_path = resource_path("ico.ico")
+        if os.path.exists(icon_path):
+            self.setWindowIcon(QIcon(icon_path))
+        
         self.setMinimumWidth(520)
         self.center_window()
 
@@ -415,6 +473,13 @@ class DownloaderApp(QWidget):
         
         # Menu Help
         help_menu = self.menubar.addMenu("❓ Help")
+        
+        # Action View Log File
+        log_action = QAction("📝 View Log File", self)
+        log_action.triggered.connect(self.show_log_file)
+        help_menu.addAction(log_action)
+        
+        help_menu.addSeparator()
         
         # Action About
         about_action = QAction("ℹ️ About", self)
@@ -1009,19 +1074,19 @@ class DownloaderApp(QWidget):
         self.loading_settings = True  # Tắt auto-save trong khi load
         
         try:
-            print("🔄 Đang tải settings...")
+            debug_print("🔄 Đang tải settings...")
             
             # Tải URL đã lưu
             saved_urls = self.settings.value("urls", "")
             if saved_urls:
                 self.url_input.setText(saved_urls)
-                print(f"📋 Đã tải {len(saved_urls.splitlines())} ")
+                debug_print(f"📋 Đã tải {len(saved_urls.splitlines())} ")
             
             # Tải tên thư mục tùy chọn
             custom_folder = self.settings.value("custom_folder", "")
             if custom_folder:
                 self.folder_name_input.setText(custom_folder)
-                print(f"📁 Đã tải thư mục: {custom_folder}")
+                debug_print(f"📁 Đã tải thư mục: {custom_folder}")
             
             # Tải chế độ video
             video_mode = self.settings.value("video_mode", True, bool)
@@ -1029,14 +1094,14 @@ class DownloaderApp(QWidget):
                 self.video_radio.setChecked(True)
             else:
                 self.playlist_radio.setChecked(True)
-            print(f"🎬 Chế độ video: {'Video đơn' if video_mode else 'Playlist'}")
+            debug_print(f"🎬 Chế độ video: {'Video đơn' if video_mode else 'Playlist'}")
             
             # Tải chế độ phụ đề
             subtitle_mode = self.settings.value("subtitle_mode", "🤖 Phụ đề tự động")
             index = self.sub_mode.findText(subtitle_mode)
             if index >= 0:
                 self.sub_mode.setCurrentIndex(index)
-            print(f"📝 Chế độ phụ đề: {subtitle_mode}")
+            debug_print(f"📝 Chế độ phụ đề: {subtitle_mode}")
             
             # Tải ngôn ngữ phụ đề
             selected_langs = self.settings.value("selected_languages", ["vi", "en"])
@@ -1051,7 +1116,7 @@ class DownloaderApp(QWidget):
             for lang in selected_langs:
                 if lang in self.lang_checkboxes:
                     self.lang_checkboxes[lang].setChecked(True)
-            print(f"🌍 Đã tải {len(selected_langs)} ngôn ngữ: {selected_langs}")
+            debug_print(f"🌍 Đã tải {len(selected_langs)} ngôn ngữ: {selected_langs}")
             
             # Cập nhật hiển thị ngôn ngữ đã chọn
             self.update_selected_languages_display()
@@ -1066,21 +1131,21 @@ class DownloaderApp(QWidget):
             geometry = self.settings.value("geometry")
             if geometry:
                 self.restoreGeometry(geometry)
-                print("🪟 Đã khôi phục vị trí cửa sổ")
+                debug_print("🪟 Đã khôi phục vị trí cửa sổ")
                 
             # Hiển thị thông tin thống kê
             usage_count = self.settings.value("usage_count", 0, int)
             last_saved = self.settings.value("last_saved", "")
             
             if usage_count > 0:
-                print(f"📊 Lần sử dụng thứ: {usage_count}")
+                debug_print(f"📊 Lần sử dụng thứ: {usage_count}")
                 if last_saved:
-                    print(f"🕒 Lần lưu cuối: {last_saved}")
+                    debug_print(f"🕒 Lần lưu cuối: {last_saved}")
                     
-            print("✅ Đã tải settings thành công!")
+            debug_print("✅ Đã tải settings thành công!")
                 
         except Exception as e:
-            print(f"⚠️ Không thể tải settings: {e}")
+            debug_print(f"⚠️ Không thể tải settings: {e}")
         finally:
             self.loading_settings = False  # Bật lại auto-save
             # Kết nối auto-save sau khi load xong
@@ -1163,22 +1228,22 @@ class DownloaderApp(QWidget):
             
             # Debug log (chỉ khi có thay đổi quan trọng)
             if custom_folder:
-                print(f"💾 Auto-save: Thư mục = {custom_folder}")
+                debug_print(f"💾 Auto-save: Thư mục = {custom_folder}")
             
         except Exception as e:
-            print(f"⚠️ Lỗi auto-save: {e}")
+            debug_print(f"⚠️ Lỗi auto-save: {e}")
 
     def debug_settings(self):
         """Debug method để kiểm tra settings đã lưu"""
-        print("\n🔍 DEBUG SETTINGS:")
-        print(f"📁 Custom folder trong registry: '{self.settings.value('custom_folder', 'EMPTY')}'")
-        print(f"📁 Custom folder trong UI: '{self.folder_name_input.toPlainText()}'")
-        print(f"🔗 URLs trong registry: {len(self.settings.value('urls', '').splitlines())} dòng")
-        print(f"🔗 URLs trong UI: {len(self.url_input.toPlainText().splitlines())} dòng")
-        print(f"🎬 Video mode: {self.settings.value('video_mode', 'NONE')}")
-        print(f"📝 Subtitle mode: {self.settings.value('subtitle_mode', 'NONE')}")
-        print(f"🌍 Languages: {self.settings.value('selected_languages', 'NONE')}")
-        print("=" * 60)
+        debug_print("\n🔍 DEBUG SETTINGS:")
+        debug_print(f"📁 Custom folder trong registry: '{self.settings.value('custom_folder', 'EMPTY')}'")
+        debug_print(f"📁 Custom folder trong UI: '{self.folder_name_input.toPlainText()}'")
+        debug_print(f"🔗 URLs trong registry: {len(self.settings.value('urls', '').splitlines())} dòng")
+        debug_print(f"🔗 URLs trong UI: {len(self.url_input.toPlainText().splitlines())} dòng")
+        debug_print(f"🎬 Video mode: {self.settings.value('video_mode', 'NONE')}")
+        debug_print(f"📝 Subtitle mode: {self.settings.value('subtitle_mode', 'NONE')}")
+        debug_print(f"🌍 Languages: {self.settings.value('selected_languages', 'NONE')}")
+        debug_print("=" * 60)
 
     def show_about(self):
         """Hiển thị thông tin về ứng dụng"""
@@ -1250,6 +1315,37 @@ class DownloaderApp(QWidget):
         except Exception as e:
             QMessageBox.warning(self, "Lỗi", f"❌ Không thể hiển thị thông tin settings: {e}")
 
+    def show_log_file(self):
+        """Hiển thị nội dung file log"""
+        try:
+            log_file = os.path.join(os.getcwd(), "DownloadVID.log")
+            
+            if os.path.exists(log_file):
+                with open(log_file, 'r', encoding='utf-8') as f:
+                    log_content = f.read()
+                
+                # Lấy 50 dòng cuối
+                lines = log_content.splitlines()
+                if len(lines) > 50:
+                    display_content = '\n'.join(lines[-50:])
+                    header = f"📝 Log File (50 dòng cuối / tổng {len(lines)} dòng)\n{'='*60}\n"
+                else:
+                    display_content = log_content
+                    header = f"📝 Log File (tổng {len(lines)} dòng)\n{'='*60}\n"
+                
+                # Tạo dialog để hiển thị log
+                log_dialog = QMessageBox(self)
+                log_dialog.setWindowTitle("Log File")
+                log_dialog.setText(header + display_content)
+                log_dialog.setDetailedText(log_content)  # Full log trong detailed text
+                log_dialog.exec()
+                
+            else:
+                QMessageBox.information(self, "Log File", "📝 Chưa có file log nào được tạo.")
+                
+        except Exception as e:
+            QMessageBox.warning(self, "Lỗi", f"❌ Không thể đọc file log: {e}")
+
     def closeEvent(self, event):
         """Xử lý khi đóng ứng dụng - tự động lưu settings"""
         try:
@@ -1264,7 +1360,7 @@ class DownloaderApp(QWidget):
             self.settings.setValue("last_closed", datetime.now().isoformat())
             
         except Exception as e:
-            print(f"⚠️ Lỗi khi lưu settings: {e}")
+            debug_print(f"⚠️ Lỗi khi lưu settings: {e}")
         
         event.accept()
 
