@@ -6,6 +6,7 @@ import logging
 import requests
 import json
 import webbrowser
+import gdown  # Thêm import gdown
 from datetime import datetime
 from PySide6.QtWidgets import (
     QApplication, QWidget, QLabel, QVBoxLayout, QPushButton,
@@ -67,8 +68,7 @@ logger = setup_logging()
 APP_VERSION = "1.0.0"
 # Thay đổi URL này
 UPDATE_CHECK_URL = "https://raw.githubusercontent.com/huynhtrancntt/DownloadVID/main/update.json"
-UPDATE_DOWNLOAD_URL = "https://raw.githubusercontent.com/huynhtrancntt/DownloadVID/main/update_latest.zip"  # Thay đổi URL này
-
+UPDATE_DOWNLOAD_URL = "https://drive.google.com/uc?id=1UYD05VutTzExD8BRsLu44zRJbjiCnXEr"
 
 class DownloadUpdateWorker(QThread):
     """Worker thread để tải về và giải nén update"""
@@ -115,7 +115,72 @@ class DownloadUpdateWorker(QThread):
             self.finished_signal.emit(False, f"Lỗi cập nhật: {str(e)}")
 
     def _download_with_progress(self, url, output_file):
-        """Tải file với thanh tiến trình"""
+        """Tải file với thanh tiến trình sử dụng gdown cho Google Drive"""
+        try:
+            # Kiểm tra xem có phải Google Drive URL không
+            if "drive.google.com" in url:
+                self.message_signal.emit("🔗 Phát hiện Google Drive URL, sử dụng gdown...")
+                
+                # Tạo callback function để cập nhật progress
+                def progress_callback(current, total):
+                    if self.stop_flag:
+                        return False  # Dừng download
+                    
+                    if total > 0:
+                        percent = int((current / total) * 100)
+                        current_mb = current / (1024 * 1024)
+                        total_mb = total / (1024 * 1024)
+                        
+                        self.progress_signal.emit(percent)
+                        self.message_signal.emit(
+                            f"⬇️ Đang tải: {current_mb:.1f}/{total_mb:.1f} MB ({percent}%)")
+                    else:
+                        current_mb = current / (1024 * 1024)
+                        self.message_signal.emit(f"⬇️ Đã tải: {current_mb:.1f} MB")
+                    
+                    return True  # Tiếp tục download
+                
+                # Sử dụng gdown để tải file
+                try:
+                    # Kiểm tra và dừng nếu cần
+                    if self.stop_flag:
+                        self.message_signal.emit("⏹ Đã dừng tải")
+                        return False
+                    
+                    # Download với gdown
+                    success = gdown.download(
+                        url, 
+                        output_file, 
+                        quiet=False,
+                        use_cookies=False
+                    )
+                    
+                    if success and os.path.exists(output_file):
+                        file_size = os.path.getsize(output_file) / (1024 * 1024)
+                        self.message_signal.emit(f"✅ Tải xuống hoàn tất! ({file_size:.1f} MB)")
+                        return True
+                    else:
+                        self.message_signal.emit("❌ Lỗi: gdown không thể tải file")
+                        return False
+                        
+                except Exception as gdown_error:
+                    self.message_signal.emit(f"❌ Lỗi gdown: {str(gdown_error)}")
+                    # Fallback to requests nếu gdown thất bại
+                    self.message_signal.emit("🔄 Thử lại với requests...")
+                    return self._download_with_requests(url, output_file)
+            
+            else:
+                # Không phải Google Drive, sử dụng requests
+                return self._download_with_requests(url, output_file)
+                
+        except Exception as e:
+            self.message_signal.emit(f"❌ Lỗi tải xuống: {str(e)}")
+            if os.path.exists(output_file):
+                os.remove(output_file)
+            return False
+
+    def _download_with_requests(self, url, output_file):
+        """Phương thức backup sử dụng requests"""
         try:
             response = requests.get(url, stream=True, timeout=30)
             response.raise_for_status()

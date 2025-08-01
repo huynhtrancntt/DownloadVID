@@ -19,8 +19,5 @@ PyInstaller.__main__.run([
     '--hidden-import=PySide6.QtWidgets',
     '--hidden-import=PySide6.QtGui',
     
-    # Tối ưu hóa
-    '--optimize=2',  # Tối ưu hóa bytecode
-    
     'App.py'
 ])
