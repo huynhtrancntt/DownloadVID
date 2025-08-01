@@ -60,8 +60,8 @@ logger = setup_logging()
 
 # Phiên bản ứng dụng
 APP_VERSION = "1.0.0"
-UPDATE_CHECK_URL = "https://api.github.com/repos/your-username/DownloadVID/releases/latest"  # Thay đổi URL này
-UPDATE_DOWNLOAD_URL = "https://github.com/your-username/DownloadVID/releases/latest"  # Thay đổi URL này
+UPDATE_CHECK_URL = "https://raw.githubusercontent.com/huynhtrancntt/DownloadVID/main/update.json"  # Thay đổi URL này
+UPDATE_DOWNLOAD_URL = "https://raw.githubusercontent.com/huynhtrancntt/DownloadVID/main/update_v1.1.0.zip"  # Thay đổi URL này
 
 class UpdateChecker(QThread):
     """Worker thread để kiểm tra update"""
