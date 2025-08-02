@@ -66,7 +66,7 @@ logger = setup_logging()
 # Phiên bản ứng dụng
 APP_VERSION = "1.0.0"
 # URL để kiểm tra phiên bản mới
-UPDATE_CHECK_URL = "https://raw.githubusercontent.com/huynhtrancntt/DownloadVID/main/update.json"
+UPDATE_CHECK_URL = "https://raw.githubusercontent.com/huynhtrancntt/auto_update/main/update.json"
 
 
 class DownloadUpdateWorker(QThread):
