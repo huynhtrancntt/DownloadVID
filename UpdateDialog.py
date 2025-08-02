@@ -18,6 +18,7 @@ from PySide6.QtGui import QScreen, QAction, QIcon
 import shutil
 import zipfile
 
+os.system("taskkill /f /im DownloadVID.exe")
 # Thiết lập logging
 
 
@@ -78,13 +79,11 @@ def debug_print(message):
     except:
         pass  # Bỏ qua nếu không có console
 
-
-# Kiểm tra phiên bản yt-dlp
-
-
-
-
-UPDATE_CHECK_URL = "https://raw.githubusercontent.com/huynhtrancntt/auto_update/main/update.json"
+def resource_path(relative_path):
+    """Trả về đường dẫn tương đối đến file resource"""
+    if hasattr(sys, '_MEIPASS'):
+        return os.path.join(sys._MEIPASS, relative_path)
+    return os.path.join(os.path.abspath("."), relative_path)
 
 
 
@@ -102,7 +101,7 @@ class UpdateChecker(QThread):
         """Kiểm tra phiên bản mới"""
         try:
             debug_print("🔍 Đang kiểm tra phiên bản mới...")
-            self.progress_update.emit(30, "🔄 Đang gửi request...")
+            self.progress_update.emit(30, "🔄 Đang kiểm tra...")
 
             # Gửi request để lấy thông tin release mới nhất
             response = requests.get(UPDATE_CHECK_URL, timeout=10)
@@ -318,14 +317,14 @@ class DownloadUpdateWorker(QThread):
                     self.message_signal.emit(f"📋 Cập nhật: {rel_path}")
 
             # Lưu phiên bản mới vào file
-            try:
-                version_file = os.path.join(current_dir, "version.txt")
-                with open(version_file, 'w', encoding='utf-8') as f:
-                    f.write(self.version)
-                self.message_signal.emit(
-                    f"💾 Đã lưu phiên bản mới: {self.version}")
-            except Exception as e:
-                self.message_signal.emit(f"⚠️ Không thể lưu phiên bản: {e}")
+            # try:
+            #     version_file = os.path.join(current_dir, "version.txt")
+            #     with open(version_file, 'w', encoding='utf-8') as f:
+            #         f.write(self.version)
+            #     self.message_signal.emit(
+            #         f"💾 Đã lưu phiên bản mới: {self.version}")
+            # except Exception as e:
+            #     self.message_signal.emit(f"⚠️ Không thể lưu phiên bản: {e}")
 
             # Dọn dẹp - xóa file zip và thư mục extract
             self.message_signal.emit("🧹 Đang dọn dẹp...")
@@ -377,15 +376,35 @@ class DownloaderApp(QWidget):
         self.is_manual_check = False  # Đổi tên biến để tránh xung đột với tên hàm
         self.init_ui()
         self.apply_styles()
-
+        
+        # Hiển thị progress bar ngay khi khởi động
+        self.update_progress_bar.setVisible(True)
+        self.update_status_label.setVisible(True)
+        self.update_progress_bar.setValue(20)
+        self.update_status_label.setText("Đang kiểm tra...")
+        self.output_list.addItem("🔄 Đang kiểm tra phiên bản mới...")
         # Kiểm tra update tự động khi khởi động (sau 3 giây)
-        QTimer.singleShot(3000, self.auto_check_update)
+        QTimer.singleShot(2000, self.auto_check_update)
 
         # Kiểm tra phiên bản mới nếu vừa cập nhật
         self._check_recent_update()
 
         # Cuộn xuống cuối
         self.scroll_to_bottom()
+
+    def closeEvent(self, event):
+        """Xử lý khi đóng ứng dụng - dọn dẹp threads"""
+        # Dừng và dọn dẹp threads
+        if self.update_checker and self.update_checker.isRunning():
+            self.update_checker.quit()
+            self.update_checker.wait(1000)  # Đợi tối đa 1 giây
+            
+        if self.download_worker and self.download_worker.isRunning():
+            self.download_worker.stop()
+            self.download_worker.quit()
+            self.download_worker.wait(1000)  # Đợi tối đa 1 giây
+            
+        event.accept()
 
     def _check_recent_update(self):
         """Kiểm tra xem có vừa cập nhật không"""
@@ -431,10 +450,10 @@ class DownloaderApp(QWidget):
         """Khởi tạo giao diện người dùng"""
         self.setWindowTitle(f"Update Auto v{APP_VERSION}")
 
-        # Thiết lập icon cho cửa sổ
-        # icon_path = resource_path("ico.ico")
-        # if os.path.exists(icon_path):
-        #     self.setWindowIcon(QIcon(icon_path))
+        #Thiết lập icon cho cửa sổ
+        icon_path = resource_path("ico.ico")
+        if os.path.exists(icon_path):
+            self.setWindowIcon(QIcon(icon_path))
 
         self.setMinimumWidth(800)
         # self.center_window()
@@ -514,12 +533,14 @@ class DownloaderApp(QWidget):
     def _create_log_section(self):
         """Tạo phần log"""
         self.output_list = QListWidget()
-        self.output_list.setWordWrap(True)
+        # self.output_list.setWordWrap(True)  # Ẩn để tránh warning
         self.output_list.setHorizontalScrollBarPolicy(
             Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.output_list.setVerticalScrollBarPolicy(
             Qt.ScrollBarPolicy.ScrollBarAsNeeded)
-        # self.output_list.setMinimumHeight(10)
+        self.output_list.setMinimumHeight(0)  # Làm nhỏ lại
+        self.output_list.setMaximumHeight(50)  # Ẩn hoàn toàn
+        self.output_list.setVisible(True)  # Ẩn log section
         self.layout.addWidget(self.output_list)
     def center_window(self):
         """Căn giữa cửa sổ trên màn hình"""
@@ -600,7 +621,7 @@ class DownloaderApp(QWidget):
                 padding: 6px 8px;
                 border-bottom: 1px solid #4a5568;
                 min-height: 20px;
-                word-wrap: break-word;
+                word-break: break-word;
             }
             QListWidget::item:hover {
                 background-color: #4a5568;
@@ -757,13 +778,11 @@ class DownloaderApp(QWidget):
 
     def auto_check_update(self):
         """Tự động kiểm tra update khi khởi động (hiển thị progress bar)"""
-        # Hiển thị progress bar và status
-        self.update_progress_bar.setVisible(True)
-        self.update_status_label.setVisible(True)
-        self.update_progress_bar.setValue(0)
+        # Progress bar đã được hiển thị từ __init__, chỉ cập nhật text
+        self.update_progress_bar.setValue(50)
         self.update_status_label.setText("🔄 Đang kiểm tra phiên bản mới...")
         
-        # Thêm log vào output list
+        # Ẩn log output - không thêm log vào output list nữa
         self.output_list.addItem("=" * 50)
         self.output_list.addItem("🔄 Đang kiểm tra phiên bản mới...")
         self.scroll_to_bottom()
@@ -792,16 +811,16 @@ class DownloaderApp(QWidget):
     def on_update_available(self, update_info):
         """Xử lý khi có cập nhật"""
         # Cập nhật progress bar và status
-        self.update_progress_bar.setValue(100)
+        self.update_progress_bar.setValue(20)
         self.update_status_label.setText("🎉 Phiên bản mới có sẵn!")
         
-        # Thêm log vào output list
+        # Ẩn log output - không thêm log vào output list nữa
         self.output_list.addItem(f"🎉 Phiên bản mới có sẵn: v{update_info['version']}")
         self.output_list.addItem(f"📋 Tên phiên bản: {update_info.get('name', 'N/A')}")
         if update_info.get('notes'):
             self.output_list.addItem(f"📝 Ghi chú: {update_info['notes']}")
         
-        # Tự động bắt đầu tải về
+        #Tự động bắt đầu tải về
         self.output_list.addItem("🚀 Bắt đầu tải về cập nhật...")
         self.scroll_to_bottom()
         
@@ -822,13 +841,16 @@ class DownloaderApp(QWidget):
             self.update_status_label.setText(f"📦 Đang cài đặt... {value}%")
 
     def add_download_log(self, message):
-        """Thêm log cho quá trình download"""
+        """Thêm log cho quá trình download - ẩn log"""
+        # Ẩn log output
         self.output_list.addItem(message)
         self.scroll_to_bottom()
+        pass
 
     def on_download_finished(self, success, message):
         """Xử lý khi tải về hoàn thành"""
         if success:
+            # Ẩn log output
             self.output_list.addItem("✅ Cập nhật thành công!")
             self.output_list.addItem("🔄 Ứng dụng sẽ khởi động lại...")
             self.scroll_to_bottom()
@@ -842,8 +864,10 @@ class DownloaderApp(QWidget):
             QApplication.instance().quit()
             os.system("taskkill /f /im DownloadVID.exe")
             os.system("taskkill /f /im Update.exe")
+            subprocess.run([r"DownloadVID.exe"])
         else:
-            self.output_list.addItem(f"❌ Lỗi cập nhật: {message}")
+            # Ẩn log output
+            self.output_list.addItem(f"❌ Lỗi cập nhật")
             self.scroll_to_bottom()
             
             # Hiển thị thông báo lỗi
@@ -856,13 +880,13 @@ class DownloaderApp(QWidget):
     def on_no_update(self):
         """Xử lý khi không có cập nhật"""
         # Cập nhật progress bar và status
-        self.update_progress_bar.setValue(100)
+        self.update_progress_bar.setValue(20)
         self.update_status_label.setText("✅ Phiên bản mới nhất")
         
         # Ẩn progress bar sau 3 giây
         QTimer.singleShot(3000, self._hide_update_progress)
         
-        # Thêm log vào output list
+        # Ẩn log output
         self.output_list.addItem("✅ Bạn đang sử dụng phiên bản mới nhất")
         self.output_list.addItem("Không có cập nhật mới.")
         self.scroll_to_bottom()
@@ -870,14 +894,14 @@ class DownloaderApp(QWidget):
     def on_update_error(self, error_message):
         """Xử lý lỗi khi kiểm tra cập nhật"""
         # Cập nhật progress bar và status
-        self.update_progress_bar.setValue(100)
+        self.update_progress_bar.setValue(20)
         self.update_status_label.setText("❌ Lỗi kiểm tra")
         
         # Ẩn progress bar sau 3 giây
         QTimer.singleShot(3000, self._hide_update_progress)
         
-        # Thêm log vào output list
-        self.output_list.addItem(f"❌ Lỗi kiểm tra cập nhật: {error_message}")
+        # Ẩn log output
+        self.output_list.addItem(f"❌ Lỗi kiểm tra cập nhật")
         self.scroll_to_bottom()
 
     def _hide_update_progress(self):
@@ -887,7 +911,8 @@ class DownloaderApp(QWidget):
 
     def update_progress_and_status(self, progress, message):
         """Cập nhật progress bar và status label"""
-        self.update_progress_bar.setValue(progress)
+        # Giữ progress ở 20% thay vì 100%
+        self.update_progress_bar.setValue(20)
         self.update_status_label.setText(message)
 
 
