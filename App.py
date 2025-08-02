@@ -64,7 +64,7 @@ def setup_logging():
 logger = setup_logging()
 
 # Phiên bản ứng dụng
-APP_VERSION = "1.0.0"
+APP_VERSION = "1.3.0"
 # URL để kiểm tra phiên bản mới
 UPDATE_CHECK_URL = "https://raw.githubusercontent.com/huynhtrancntt/auto_update/main/update.json"
 
@@ -1088,6 +1088,7 @@ class DownloaderApp(QWidget):
         self.update_checker = None  # Update checker thread
         self.settings = QSettings("HT Software", "DownloadVID")
         self.loading_settings = False  # Flag để tránh auto-save khi đang load
+        self.is_manual_check = False  # Đổi tên biến để tránh xung đột với tên hàm
         self.init_ui()
         self.apply_styles()
         self.load_settings()
@@ -2126,27 +2127,15 @@ class DownloaderApp(QWidget):
         if not auto_check_enabled:
             return
 
-        # Kiểm tra lần cuối check (tránh check quá thường xuyên)
-        # last_check = self.settings.value("last_update_check", "")
-        # if last_check:
-        #     try:
-        #         from datetime import datetime, timedelta
-        #         last_check_date = datetime.fromisoformat(last_check)
-        #         if datetime.now() - last_check_date < timedelta(days=1):
-        #             debug_print(
-        #                 "🔄 Đã check update trong 24h qua, bỏ qua auto-check")
-        #             return
-        #     except:
-        #         pass
-
         # Hiển thị thông báo đang kiểm tra
         self.output_list.addItem("🔄 Đang kiểm tra phiên bản mới...")
         self.scroll_to_bottom()
         
-        self._start_update_check(silent=False)  # Thay đổi từ silent=True thành silent=False
+        self._start_update_check(silent=True)  # Thay đổi thành silent=True
 
     def manual_check_update(self):
         """Kiểm tra update thủ công (có thông báo)"""
+        self.is_manual_check = True  # Đánh dấu đây là manual check
         self.output_list.addItem("🔄 Đang kiểm tra phiên bản mới...")
         self.scroll_to_bottom()
         self._start_update_check(silent=False)
@@ -2200,9 +2189,12 @@ class DownloaderApp(QWidget):
         if not silent:
             self.output_list.addItem("✅ Bạn đang sử dụng phiên bản mới nhất")
             self.scroll_to_bottom()
-            # Chỉ hiển thị MessageBox khi check thủ công, không hiển thị khi auto-check
-            # QMessageBox.information(
-            #     self, "Thông báo", f"✅ Bạn đang sử dụng phiên bản mới nhất (v{APP_VERSION})")
+            if self.is_manual_check:
+                # Chỉ hiển thị MessageBox khi check thủ công, không hiển thị khi auto-check
+                QMessageBox.information(
+                    self, "Thông báo", f"✅ Bạn đang sử dụng phiên bản mới nhất (v{APP_VERSION})")
+            # Reset flag sau khi xử lý
+            self.is_manual_check = False
         else:
             # Khi auto-check, chỉ hiển thị trong log
             self.output_list.addItem("✅ Phiên bản hiện tại là mới nhất")
