@@ -64,7 +64,7 @@ def setup_logging():
 logger = setup_logging()
 
 # Phiên bản ứng dụng
-APP_VERSION = "1.3.0"
+APP_VERSION = "1.1.0"
 # URL để kiểm tra phiên bản mới
 UPDATE_CHECK_URL = "https://raw.githubusercontent.com/huynhtrancntt/auto_update/main/update.json"
 
@@ -1132,7 +1132,6 @@ class DownloaderApp(QWidget):
 
         self.output_list.addItem("=" * 50)
         self.output_list.addItem("💡 Sẵn sàng tải video!")
-        self.output_list.addItem("")
 
         # Cuộn xuống cuối
         self.scroll_to_bottom()
@@ -2128,6 +2127,7 @@ class DownloaderApp(QWidget):
             return
 
         # Hiển thị thông báo đang kiểm tra
+        self.output_list.addItem("=" * 50)
         self.output_list.addItem("🔄 Đang kiểm tra phiên bản mới...")
         self.scroll_to_bottom()
         
@@ -2136,6 +2136,7 @@ class DownloaderApp(QWidget):
     def manual_check_update(self):
         """Kiểm tra update thủ công (có thông báo)"""
         self.is_manual_check = True  # Đánh dấu đây là manual check
+        self.output_list.addItem("=" * 50)
         self.output_list.addItem("🔄 Đang kiểm tra phiên bản mới...")
         self.scroll_to_bottom()
         self._start_update_check(silent=False)
@@ -2175,7 +2176,6 @@ class DownloaderApp(QWidget):
             self.output_list.addItem(f"🎉 Phiên bản mới: v{update_info['version']}")
             self.output_list.addItem(f"📱 Phiên bản hiện tại: v{APP_VERSION}")
             self.output_list.addItem("🔄 Dialog cập nhật sẽ mở trong giây lát...")
-            self.output_list.addItem("=" * 50)
             self.scroll_to_bottom()
 
         # Hiển thị dialog update
