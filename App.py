@@ -921,13 +921,21 @@ class DownloadWorker(QThread):
         else:
             cmd += ["-f", "bv*+ba/b", "--merge-output-format", "mp4"]
 
+
+
         # Template output
         if self.video_mode:
-            output_template = "%(title)s.%(ext)s"
+            if index ==1:
+                output_template = f"%(title)s.%(ext)s" 
+            else:
+                output_template = f"video_{index}_%(title)s.%(ext)s" 
         else:
-            output_template = f"%(autonumber)03d_%(title)s.%(ext)s"
-            cmd.append("--yes-playlist")
-
+            if index == 1:
+                output_template = f"%(autonumber)03d_%(title)s.%(ext)s"
+                cmd.append("--yes-playlist")
+            else:
+                output_template = f"playlist_{index}_%(autonumber)03d_%(title)s.%(ext)s"
+                cmd.append("--yes-playlist")
         cmd += ["-o", os.path.join(download_folder, output_template)]
 
         if self.audio_only and not self.subtitle_only:
