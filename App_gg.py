@@ -6,6 +6,7 @@ import logging
 import requests
 import json
 import webbrowser
+import gdown  # Thêm import gdown
 from datetime import datetime
 from PySide6.QtWidgets import (
     QApplication, QWidget, QLabel, QVBoxLayout, QPushButton,
@@ -65,12 +66,12 @@ logger = setup_logging()
 
 # Phiên bản ứng dụng
 APP_VERSION = "1.0.0"
-# URL để kiểm tra phiên bản mới
+# Thay đổi URL này
 UPDATE_CHECK_URL = "https://raw.githubusercontent.com/huynhtrancntt/DownloadVID/main/update.json"
-
+UPDATE_DOWNLOAD_URL = "https://drive.google.com/uc?id=1UYD05VutTzExD8BRsLu44zRJbjiCnXEr"
 
 class DownloadUpdateWorker(QThread):
-    """Worker thread để tải ề và giải nén update"""
+    """Worker thread để tải về và giải nén update"""
     progress_signal = Signal(int)
     message_signal = Signal(str)
     finished_signal = Signal(bool, str)  # success, message
@@ -114,7 +115,72 @@ class DownloadUpdateWorker(QThread):
             self.finished_signal.emit(False, f"Lỗi cập nhật: {str(e)}")
 
     def _download_with_progress(self, url, output_file):
-        """Tải file với thanh tiến trình"""
+        """Tải file với thanh tiến trình sử dụng gdown cho Google Drive"""
+        try:
+            # Kiểm tra xem có phải Google Drive URL không
+            if "drive.google.com" in url:
+                self.message_signal.emit("🔗 Phát hiện Google Drive URL, sử dụng gdown...")
+                
+                # Tạo callback function để cập nhật progress
+                def progress_callback(current, total):
+                    if self.stop_flag:
+                        return False  # Dừng download
+                    
+                    if total > 0:
+                        percent = int((current / total) * 100)
+                        current_mb = current / (1024 * 1024)
+                        total_mb = total / (1024 * 1024)
+                        
+                        self.progress_signal.emit(percent)
+                        self.message_signal.emit(
+                            f"⬇️ Đang tải: {current_mb:.1f}/{total_mb:.1f} MB ({percent}%)")
+                    else:
+                        current_mb = current / (1024 * 1024)
+                        self.message_signal.emit(f"⬇️ Đã tải: {current_mb:.1f} MB")
+                    
+                    return True  # Tiếp tục download
+                
+                # Sử dụng gdown để tải file
+                try:
+                    # Kiểm tra và dừng nếu cần
+                    if self.stop_flag:
+                        self.message_signal.emit("⏹ Đã dừng tải")
+                        return False
+                    
+                    # Download với gdown
+                    success = gdown.download(
+                        url, 
+                        output_file, 
+                        quiet=False,
+                        use_cookies=False
+                    )
+                    
+                    if success and os.path.exists(output_file):
+                        file_size = os.path.getsize(output_file) / (1024 * 1024)
+                        self.message_signal.emit(f"✅ Tải xuống hoàn tất! ({file_size:.1f} MB)")
+                        return True
+                    else:
+                        self.message_signal.emit("❌ Lỗi: gdown không thể tải file")
+                        return False
+                        
+                except Exception as gdown_error:
+                    self.message_signal.emit(f"❌ Lỗi gdown: {str(gdown_error)}")
+                    # Fallback to requests nếu gdown thất bại
+                    self.message_signal.emit("🔄 Thử lại với requests...")
+                    return self._download_with_requests(url, output_file)
+            
+            else:
+                # Không phải Google Drive, sử dụng requests
+                return self._download_with_requests(url, output_file)
+                
+        except Exception as e:
+            self.message_signal.emit(f"❌ Lỗi tải xuống: {str(e)}")
+            if os.path.exists(output_file):
+                os.remove(output_file)
+            return False
+
+    def _download_with_requests(self, url, output_file):
+        """Phương thức backup sử dụng requests"""
         try:
             response = requests.get(url, stream=True, timeout=30)
             response.raise_for_status()
@@ -268,22 +334,10 @@ class UpdateChecker(QThread):
                     'tag_name', '').replace('v', '')
                 release_name = release_data.get('name', '')
                 release_notes = release_data.get('body', '')
-                # Lấy download URL từ JSON response
-                download_url = release_data.get('download_url', '')
-                if not download_url:
-                    # Fallback nếu không có download_url, có thể thử các key khác
-                    download_url = release_data.get('html_url', '')
-                    if not download_url:
-                        download_url = release_data.get('zipball_url', '')
-                
-                # Kiểm tra tính hợp lệ của download URL
-                if not download_url or not download_url.startswith(('http://', 'https://')):
-                    self.error_occurred.emit("Không tìm thấy URL download hợp lệ trong response")
-                    return
-                
+                download_url = release_data.get(
+                    'html_url', UPDATE_DOWNLOAD_URL)
                 published_at = release_data.get('published_at', '')
-                debug_print(f"📥 Download URL từ JSON: {download_url}")
-                
+
                 # So sánh phiên bản
                 if self._is_newer_version(latest_version, APP_VERSION):
                     update_info = {
@@ -495,12 +549,6 @@ class UpdateDialog(QDialog):
 
     def start_auto_download(self):
         """Bắt đầu tải về tự động"""
-        # Kiểm tra xem có URL download không
-        if not self.update_info.get('download_url'):
-            self.add_log("❌ Không có URL download hợp lệ")
-            QMessageBox.warning(self, "Lỗi", "❌ Không có URL download hợp lệ.\nVui lòng thử tải về thủ công.")
-            return
-        
         # Hiển thị progress bar và log area
         self.progress_bar.setVisible(True)
         self.log_area.setVisible(True)
@@ -515,7 +563,7 @@ class UpdateDialog(QDialog):
 
         # Tạo và chạy worker
         self.download_worker = DownloadUpdateWorker(
-            self.update_info['download_url'], self.update_info['version'])
+            UPDATE_DOWNLOAD_URL, self.update_info['version'])
         self.download_worker.progress_signal.connect(self.update_progress)
         self.download_worker.message_signal.connect(self.add_log)
         self.download_worker.finished_signal.connect(self.on_download_finished)
