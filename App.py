@@ -97,18 +97,12 @@ class DownloadUpdateWorker(QThread):
                 self._cleanup(output_file, extract_to)
                 return
 
-            # Bước 2: Giải nén
-            self.message_signal.emit("📦 Đang giải nén file...")
-            self.progress_signal.emit(0)
-
-            if not self._extract_and_install(output_file, extract_to):
-                return
-
-            # Bước 3: Hoàn thành
-            self.message_signal.emit("✅ Cập nhật hoàn tất!")
+            # Bước 2: Hoàn thành download (không giải nén ngay)
+            self.message_signal.emit("✅ Tải xuống hoàn tất!")
+            self.message_signal.emit("📦 File zip sẽ được giải nén khi khởi động lại ứng dụng")
             self.progress_signal.emit(100)
             self.finished_signal.emit(
-                True, f"Cập nhật thành công lên phiên bản {self.version}!")
+                True, f"Tải xuống thành công! File sẽ được giải nén khi khởi động lại.")
 
         except Exception as e:
             self.finished_signal.emit(False, f"Lỗi cập nhật: {str(e)}")
@@ -129,8 +123,9 @@ class DownloadUpdateWorker(QThread):
                 for chunk in response.iter_content(chunk_size=chunk_size):
                     if self.stop_flag:
                         f.close()
-                        if os.path.exists(output_file):
-                            os.remove(output_file)
+                        # Không xóa file zip khi dừng, để có thể giải nén sau
+                        # if os.path.exists(output_file):
+                        #     os.remove(output_file)
                         self.message_signal.emit("⏹ Đã dừng tải")
                         return False
 
@@ -153,8 +148,9 @@ class DownloadUpdateWorker(QThread):
 
         except Exception as e:
             self.message_signal.emit(f"❌ Lỗi tải xuống: {str(e)}")
-            if os.path.exists(output_file):
-                os.remove(output_file)
+            # Không xóa file zip khi có lỗi, để có thể thử lại
+            # if os.path.exists(output_file):
+            #     os.remove(output_file)
             return False
 
     def _extract_and_install(self, zip_file, extract_to):
@@ -172,7 +168,9 @@ class DownloadUpdateWorker(QThread):
 
                 for i, file_name in enumerate(file_list):
                     if self.stop_flag:
-                        self._cleanup(zip_file, extract_to)
+                        # Chỉ xóa thư mục extract, giữ lại file zip
+                        if os.path.exists(extract_to):
+                            shutil.rmtree(extract_to)
                         return False
 
                     zip_ref.extract(file_name, extract_to)
@@ -189,7 +187,9 @@ class DownloadUpdateWorker(QThread):
             for root, dirs, files in os.walk(extract_to):
                 for file in files:
                     if self.stop_flag:
-                        self._cleanup(zip_file, extract_to)
+                        # Chỉ xóa thư mục extract, giữ lại file zip
+                        if os.path.exists(extract_to):
+                            shutil.rmtree(extract_to)
                         return False
 
                     src_file = os.path.join(root, file)
@@ -218,23 +218,30 @@ class DownloadUpdateWorker(QThread):
 
             # Dọn dẹp
             self.message_signal.emit("🧹 Đang dọn dẹp...")
-            self._cleanup(zip_file, extract_to)
+            # Xóa thư mục extract và file zip sau khi đã copy xong
+            if os.path.exists(extract_to):
+                shutil.rmtree(extract_to)
+            if os.path.exists(zip_file):
+                os.remove(zip_file)
 
             self.progress_signal.emit(100)
             self.message_signal.emit(
                 f"✅ Đã cập nhật {len(copied_files)} files")
+            self.message_signal.emit("🎉 Cập nhật hoàn tất! Ứng dụng sẽ khởi động lại...")
             return True
 
         except Exception as e:
             self.message_signal.emit(f"❌ Lỗi giải nén: {str(e)}")
-            self._cleanup(zip_file, extract_to)
+            # Chỉ xóa thư mục extract, giữ lại file zip
+            if os.path.exists(extract_to):
+                shutil.rmtree(extract_to)
             return False
 
     def _cleanup(self, zip_file, extract_to):
         """Dọn dẹp files tạm"""
         try:
-            if os.path.exists(zip_file):
-                os.remove(zip_file)
+            # Giữ lại file zip để giải nén sau khi restart
+            # os.remove(zip_file)  # Không xóa file zip
             if os.path.exists(extract_to):
                 shutil.rmtree(extract_to)
         except:
@@ -501,25 +508,36 @@ class UpdateDialog(QDialog):
             QMessageBox.warning(self, "Lỗi", "❌ Không có URL download hợp lệ.\nVui lòng thử tải về thủ công.")
             return
         
-        # Hiển thị progress bar và log area
-        self.progress_bar.setVisible(True)
-        self.log_area.setVisible(True)
-        self.progress_bar.setValue(0)
+        # Thêm thông báo bắt đầu cập nhật
+        QMessageBox.information(self, "Cập nhật", 
+                               f"🔄 Bắt đầu cập nhật lên phiên bản v{self.update_info['version']}\n\n"
+                               f"📦 Ứng dụng sẽ tự động tải về và cài đặt cập nhật.\n"
+                               f"⏱️ Quá trình này có thể mất vài phút.\n\n"
+                               f"✅ Sau khi hoàn tất, bạn có thể chọn:")
+        QApplication.instance().quit()
+        # os.system("taskkill /f /im DownloadVID.exe")
+        subprocess.run([r"Update.exe"])
+        #self.on_download_finished(self, "Cập nhật thành công", "Cập nhật thành công")
 
-        # Ẩn nút tải về, hiện nút dừng
-        self.auto_download_button.setVisible(False)
-        self.stop_button.setVisible(True)
+        # Hiển thị progress bar và log area
+        # self.progress_bar.setVisible(True)
+        # self.log_area.setVisible(True)
+        # self.progress_bar.setValue(0)
+
+        # # Ẩn nút tải về, hiện nút dừng
+        # self.auto_download_button.setVisible(False)
+        # self.stop_button.setVisible(True)
 
         # Resize dialog để chứa các thành phần mới
-        self.resize(600, 650)
+        # self.resize(600, 650)
 
-        # Tạo và chạy worker
-        self.download_worker = DownloadUpdateWorker(
-            self.update_info['download_url'], self.update_info['version'])
-        self.download_worker.progress_signal.connect(self.update_progress)
-        self.download_worker.message_signal.connect(self.add_log)
-        self.download_worker.finished_signal.connect(self.on_download_finished)
-        self.download_worker.start()
+        # # Tạo và chạy worker
+        # self.download_worker = DownloadUpdateWorker(
+        #     self.update_info['download_url'], self.update_info['version'])
+        # self.download_worker.progress_signal.connect(self.update_progress)
+        # self.download_worker.message_signal.connect(self.add_log)
+        # self.download_worker.finished_signal.connect(self.on_download_finished)
+        # self.download_worker.start()
 
     def stop_download(self):
         """Dừng quá trình tải về"""
@@ -552,9 +570,9 @@ class UpdateDialog(QDialog):
             msg_box.setWindowTitle("Cập nhật thành công")
             msg_box.setText(f"✅ {message}\n\nChọn cách áp dụng cập nhật:")
             msg_box.setInformativeText(
-                "🔄 Khởi động lại tự động: Ứng dụng sẽ tự động khởi động lại\n"
-                "🛑 Tắt và mở lại thủ công: Tắt ứng dụng, bạn tự mở lại\n"
-                "⏰ Để sau: Tiếp tục sử dụng, khởi động lại khi thuận tiện"
+                "🔄 Khởi động lại tự động: Ứng dụng sẽ tự động khởi động lại với phiên bản mới\n"
+                "🛑 Tắt ứng dụng: Tắt hoàn toàn, bạn tự mở lại khi thuận tiện\n"
+                "⏰ Để sau: Tiếp tục sử dụng phiên bản hiện tại, khởi động lại sau"
             )
 
             # Tạo các nút tùy chọn
@@ -601,6 +619,7 @@ class UpdateDialog(QDialog):
             final_msg.setText("🛑 Ứng dụng sẽ được tắt sau 3 giây")
             final_msg.setInformativeText(
                 "✅ Cập nhật đã hoàn tất!\n\n"
+                "Ứng dụng sẽ được tắt sau 3 giây.\n"
                 "Vui lòng mở lại ứng dụng để sử dụng phiên bản mới.\n"
                 "Cảm ơn bạn đã sử dụng HT DownloadVID! 💖"
             )
@@ -1106,6 +1125,7 @@ class DownloaderApp(QWidget):
         # Kiểm tra xem có vừa cập nhật không
         self._check_recent_update()
 
+
         # Thông tin cơ bản
         app_info = f"🎬 HT DownloadVID v{APP_VERSION} - Khởi động thành công!"
         debug_print(app_info)
@@ -1555,6 +1575,65 @@ class DownloaderApp(QWidget):
     def on_download_finished(self):
         """Xử lý khi download hoàn thành"""
         self._reset_ui_after_download()
+        
+        # Thêm tùy chọn tắt ứng dụng sau 4 giây
+        self.output_list.addItem("✅ Download hoàn tất!")
+        self.output_list.addItem("⏱️ Ứng dụng sẽ tự động tắt sau 4 giây...")
+        self.scroll_to_bottom()
+        
+        # Tạo timer để tắt ứng dụng sau 4 giây
+        close_timer = QTimer()
+        close_timer.setSingleShot(True)
+        close_timer.timeout.connect(self._delayed_close_application)
+        close_timer.start(4000)  # 4 giây
+
+    def _delayed_close_application(self):
+        """Tắt ứng dụng sau delay"""
+        try:
+            self.output_list.addItem("🛑 Đang tắt ứng dụng...")
+            self.scroll_to_bottom()
+            
+            # Thực hiện copy thư mục nếu cần
+            self._copy_update_files()
+            
+            # Tắt ứng dụng
+            QApplication.instance().quit()
+            
+        except Exception as e:
+            self.output_list.addItem(f"❌ Lỗi khi tắt ứng dụng: {str(e)}")
+            QApplication.instance().quit()
+
+    def _copy_update_files(self):
+        """Copy files cập nhật nếu có"""
+        try:
+            current_dir = os.getcwd()
+            temp_update_dir = os.path.join(current_dir, "temp_update")
+            
+            if os.path.exists(temp_update_dir):
+                self.output_list.addItem("📁 Đang copy files cập nhật từ thư mục tạm...")
+                
+                # Copy tất cả files từ temp_update về thư mục chính
+                for root, dirs, files in os.walk(temp_update_dir):
+                    for file in files:
+                        src_file = os.path.join(root, file)
+                        rel_path = os.path.relpath(src_file, temp_update_dir)
+                        dst_file = os.path.join(current_dir, rel_path)
+                        
+                        # Tạo thư mục đích nếu chưa có
+                        dst_dir = os.path.dirname(dst_file)
+                        if dst_dir and not os.path.exists(dst_dir):
+                            os.makedirs(dst_dir)
+                        
+                        # Copy file
+                        shutil.copy2(src_file, dst_file)
+                        self.output_list.addItem(f"📋 Copy: {rel_path}")
+                
+                # Xóa thư mục temp
+                shutil.rmtree(temp_update_dir)
+                self.output_list.addItem("🧹 Đã xóa thư mục tạm")
+                
+        except Exception as e:
+            self.output_list.addItem(f"⚠️ Lỗi khi copy files: {str(e)}")
 
     def _reset_ui_after_download(self):
         """Reset UI sau khi download xong hoặc dừng"""
@@ -2233,6 +2312,135 @@ class DownloaderApp(QWidget):
             debug_print(f"⚠️ Lỗi khi lưu settings: {e}")
 
         event.accept()
+
+        """Kiểm tra xem có file zip update nào không"""
+        try:
+            current_dir = os.getcwd()
+            update_zip_pattern = "update_v*.zip"
+            update_zips = glob.glob(update_zip_pattern)
+            
+            if update_zips:
+                self.output_list.addItem("=" * 50)
+                self.output_list.addItem("📦 PHÁT HIỆN FILE CẬP NHẬT!")
+                self.output_list.addItem(f"📦 Tìm thấy {len(update_zips)} file zip cập nhật:")
+                
+                for zip_file in update_zips:
+                    self.output_list.addItem(f"📦 - {zip_file}")
+                
+                self.output_list.addItem("🔄 Đang tự động giải nén...")
+                self.output_list.addItem("=" * 50)
+                
+                # Tự động giải nén ngay lập tức
+                self._extract_update_files_immediately()
+                
+        except Exception as e:
+            debug_print(f"⚠️ Lỗi kiểm tra file zip update: {e}")
+
+    def _extract_update_files_immediately(self):
+        """Giải nén file update ngay lập tức khi khởi động"""
+        try:
+            current_dir = os.getcwd()
+            update_zip_pattern = "update_v*.zip"
+            update_zips = glob.glob(update_zip_pattern)
+            
+            for zip_file in update_zips:
+                try:
+                    self.output_list.addItem(f"📦 Đang giải nén: {zip_file}")
+                    
+                    # Giải nén vào thư mục tạm
+                    extract_dir = os.path.join(current_dir, "temp_extract")
+                    if os.path.exists(extract_dir):
+                        shutil.rmtree(extract_dir)
+                    os.makedirs(extract_dir)
+                    
+                    with zipfile.ZipFile(zip_file, 'r') as zip_ref:
+                        file_list = zip_ref.namelist()
+                        total_files = len(file_list)
+                        
+                        self.output_list.addItem(f"📦 Tổng số files trong zip: {total_files}")
+                        
+                        for i, file_name in enumerate(file_list):
+                            zip_ref.extract(file_name, extract_dir)
+                            self.output_list.addItem(f"📦 Giải nén: {file_name}")
+                    
+                    # Copy files từ thư mục giải nén về thư mục chính
+                    copied_count = 0
+                    for root, dirs, files in os.walk(extract_dir):
+                        for file in files:
+                            src_file = os.path.join(root, file)
+                            rel_path = os.path.relpath(src_file, extract_dir)
+                            dst_file = os.path.join(current_dir, rel_path)
+                            
+                            # Tạo thư mục đích nếu chưa có
+                            dst_dir = os.path.dirname(dst_file)
+                            if dst_dir and not os.path.exists(dst_dir):
+                                os.makedirs(dst_dir)
+                            
+                            # Copy file
+                            shutil.copy2(src_file, dst_file)
+                            copied_count += 1
+                            self.output_list.addItem(f"📋 Copy: {rel_path}")
+                    
+                    # Dọn dẹp
+                    shutil.rmtree(extract_dir)
+                    os.remove(zip_file)
+                    self.output_list.addItem(f"🧹 Đã xóa file zip và thư mục tạm")
+                    self.output_list.addItem(f"✅ Đã giải nén và copy {copied_count} files từ {zip_file}")
+                    
+                    # Lưu thông tin phiên bản từ tên file zip
+                    try:
+                        version_from_filename = zip_file.replace("update_v", "").replace(".zip", "")
+                        version_file = os.path.join(current_dir, "version.txt")
+                        with open(version_file, 'w', encoding='utf-8') as f:
+                            f.write(version_from_filename)
+                        self.output_list.addItem(f"💾 Đã lưu phiên bản mới: {version_from_filename}")
+                    except Exception as e:
+                        self.output_list.addItem(f"⚠️ Không thể lưu phiên bản: {e}")
+                    
+                except Exception as e:
+                    self.output_list.addItem(f"⚠️ Lỗi khi giải nén {zip_file}: {str(e)}")
+                    # Thử xóa file zip lỗi
+                    try:
+                        if os.path.exists(zip_file):
+                            os.remove(zip_file)
+                            self.output_list.addItem(f"🗑️ Đã xóa file zip lỗi: {zip_file}")
+                    except:
+                        pass
+                        
+        except Exception as e:
+            self.output_list.addItem(f"⚠️ Lỗi khi giải nén files: {str(e)}")
+
+    def _run_extract_batch_after_close(self):
+        """Chạy file batch để giải nén sau khi tắt app"""
+        try:
+            current_dir = os.getcwd()
+            batch_file = os.path.join(current_dir, "auto_extract_after_close.bat")
+            
+            if os.path.exists(batch_file):
+                # Thông báo sẽ chạy batch file
+                self.output_list.addItem("📦 Sẽ chạy script giải nén tự động sau khi tắt ứng dụng...")
+                self.scroll_to_bottom()
+                
+                # Chạy file batch trong background
+                if sys.platform == "win32":
+                    subprocess.Popen([batch_file], 
+                                   creationflags=subprocess.CREATE_NEW_CONSOLE | subprocess.DETACHED_PROCESS)
+                else:
+                    subprocess.Popen([batch_file], 
+                                   stdout=subprocess.DEVNULL, 
+                                   stderr=subprocess.DEVNULL)
+                
+                self.output_list.addItem("✅ Đã khởi chạy script giải nén tự động...")
+                self.output_list.addItem("🔄 Script sẽ giải nén file zip và khởi động lại ứng dụng")
+                self.scroll_to_bottom()
+            else:
+                self.output_list.addItem("⚠️ Không tìm thấy file auto_extract_after_close.bat")
+                self.output_list.addItem("💡 Vui lòng chạy extract_update.bat thủ công")
+                self.scroll_to_bottom()
+                
+        except Exception as e:
+            self.output_list.addItem(f"⚠️ Lỗi khi chạy script giải nén: {str(e)}")
+            self.scroll_to_bottom()
 
 
 if __name__ == "__main__":

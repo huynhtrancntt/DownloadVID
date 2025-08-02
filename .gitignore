@@ -3,6 +3,8 @@ ffmpeg
 venv
 build
 dist
+dist2
+dist3
 DownloadVID.log
 App.py
 __pycache__
