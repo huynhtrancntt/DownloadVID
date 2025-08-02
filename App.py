@@ -925,7 +925,7 @@ class DownloadWorker(QThread):
         if self.video_mode:
             output_template = "%(title)s.%(ext)s"
         else:
-            output_template = f"playlist_{index}_%(autonumber)03d_%(title)s.%(ext)s"
+            output_template = f"%(autonumber)03d_%(title)s.%(ext)s"
             cmd.append("--yes-playlist")
 
         cmd += ["-o", os.path.join(download_folder, output_template)]
