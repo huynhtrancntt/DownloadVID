@@ -812,53 +812,60 @@ class DownloadWorker(QThread):
             self.message.emit(f"❌ Lỗi: {e}")
 
     def _create_download_folder(self):
-        """Tạo thư mục download"""
+        """Tạo thư mục download với cấu trúc đơn giản"""
+        base_folder = "Video"
+        os.makedirs(base_folder, exist_ok=True)
+        
         if self.custom_folder_name:
-            # Kiểm tra xem có phải là đường dẫn đầy đủ không
+            # Nếu có tên thư mục tùy chọn
             if os.path.isabs(self.custom_folder_name):
-                # Đường dẫn đầy đủ - sử dụng trực tiếp
-                download_folder = self.custom_folder_name
-                date_str = datetime.now().strftime("%Y-%m-%d")
-                download_folder = os.path.join(download_folder, date_str)
-
+                # Đường dẫn đầy đủ
+                date_folder = self.custom_folder_name
             else:
-                # Chỉ là tên thư mục - tạo trong thư mục Video
-                base_folder = "Video"
-                os.makedirs(base_folder, exist_ok=True)
-                date_str = datetime.now().strftime("%Y-%m-%d")
-                download_folder = os.path.join(
-                    base_folder, self.custom_folder_name)
+                # Tên thư mục - tạo trong thư mục Video
+                date_folder = os.path.join(base_folder, self.custom_folder_name)
         else:
             # Không có tên tùy chọn - tạo theo ngày
-            base_folder = "Video"
-            os.makedirs(base_folder, exist_ok=True)
             date_str = datetime.now().strftime("%Y-%m-%d")
-            download_folder = os.path.join(base_folder, date_str)
-
-        # Xử lý trường hợp thư mục đã tồn tại
-        original_folder = download_folder
-        count = 1
-        while os.path.exists(download_folder):
-            if os.path.isabs(self.custom_folder_name):
-                # Với đường dẫn đầy đủ, thêm số vào cuối tên thư mục
-                parent_dir = os.path.dirname(original_folder)
-                folder_name = os.path.basename(original_folder)
-                download_folder = os.path.join(
-                    parent_dir, f"{folder_name}-{count}")
-            else:
-                download_folder = f"{original_folder}-{count}"
-            count += 1
-
+            date_folder = os.path.join(base_folder, date_str)
+        
+        # Tạo thư mục con với số thứ tự (01, 02, 03...)
+        download_folder = self._create_numbered_subfolder(date_folder)
+        
         os.makedirs(download_folder, exist_ok=True)
+        return download_folder
+    
+    def _create_numbered_subfolder(self, date_folder):
+        """Tạo thư mục con với số thứ tự (01, 02, 03...)"""
+        if not os.path.exists(date_folder):
+            os.makedirs(date_folder, exist_ok=True)
+        
+        # Tìm số thứ tự cao nhất trong thư mục ngày
+        max_number = 0
+        for item in os.listdir(date_folder):
+            item_path = os.path.join(date_folder, item)
+            if os.path.isdir(item_path) and item.isdigit():
+                max_number = max(max_number, int(item))
+        
+        # Tạo thư mục con mới với số tiếp theo (format 2 chữ số)
+        next_number = max_number + 1
+        subfolder_name = f"{next_number:02d}"
+        download_folder = os.path.join(date_folder, subfolder_name)
+        
         return download_folder
 
     def _download_single_url(self, url, download_folder, index):
         """Download một URL đơn"""
         cmd = self._build_command(url, download_folder, index)
 
+        # Thiết lập creation flags để ẩn console window trên Windows
+        creation_flags = 0
+        if sys.platform == "win32":
+            creation_flags = subprocess.CREATE_NO_WINDOW
+
         self.process = subprocess.Popen(
             cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-            text=True, bufsize=1
+            text=True, bufsize=1, creationflags=creation_flags
         )
 
         for line in self.process.stdout:
